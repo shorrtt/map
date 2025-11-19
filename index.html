@@ -7,11 +7,6 @@
       content="width=device-width, initial-scale=1.0"
     />
     <title>Locations Map</title>
-    <!-- Font Awesome for icons -->
-    <link
-      rel="stylesheet"
-      href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.3/css/all.min.css"
-    />
     <!-- Leaflet CSS -->
     <link
       rel="stylesheet"
@@ -54,9 +49,58 @@
     <script src="https://unpkg.com/leaflet@1.7.1/dist/leaflet.js"></script>
   </head>
   <body>
+    <div class="app-overlay">
+      <header class="app-header">
+        <div class="app-header-left">
+          <div>
+            <div class="app-title">EchoRP Crime Map</div>
+            <div class="app-subtitle">Interactive locations &amp; markers</div>
+          </div>
+        </div>
+        <div class="app-header-right">
+          <button id="options-toggle" class="header-button">
+            <svg
+              class="header-icon"
+              viewBox="0 0 24 24"
+              aria-hidden="true"
+            >
+              <path
+                d="M10 6h10M4 6h2m4 6h10M4 12h6m4 6h6M4 18h8"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              />
+            </svg>
+            <span>Options</span>
+          </button>
+        </div>
+      </header>
+
     <!-- Sidebar for the locations list -->
     <div id="locations-list" class="locations-list">
       <h1 class="locations-title">Crime Categories</h1>
+      <div class="locations-search">
+        <svg
+          class="locations-search-icon"
+          viewBox="0 0 24 24"
+          aria-hidden="true"
+        >
+          <path
+            d="M11 5a6 6 0 1 1 0 12 6 6 0 0 1 0-12zm0-2a8 8 0 1 0 4.9 14.3l3.9 3.9a1 1 0 0 0 1.4-1.4l-3.9-3.9A8 8 0 0 0 11 3z"
+            fill="currentColor"
+          />
+        </svg>
+        <input
+          id="location-search"
+          type="text"
+          placeholder="Search locations..."
+          autocomplete="off"
+        />
+      </div>
+      <div id="search-results" class="search-results"></div>
+      <div id="locations-list-inner"></div>
     </div>
 
     <!-- Map container -->
@@ -104,7 +148,7 @@
     <!-- Loading indicator for prefetching images -->
     <div id="loading-indicator" class="loading-indicator"></div>
 
-
+    </div>
     <!-- Include the main JS file -->
     <script src="map.js"></script>
   </body>

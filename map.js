@@ -3,8 +3,9 @@
 // Initialize the map with the canvas renderer for better performance
 const map = L.map("map", {
   crs: L.CRS.Simple,
-  minZoom: -5,
-  zoom: 1,
+  minZoom: -15,
+  zoom: 3,
+  maxZoom: 10,
   preferCanvas: true,
 });
 
@@ -13,7 +14,9 @@ const bounds = [
   [0, 0],
   [1000, 1000],
 ];
-L.imageOverlay("Gta5MapCayo.png", bounds).addTo(map);
+// Use an optimized, downscaled version of the base map for smoother performance.
+// The original high-res PNG is still available in the project if needed.
+L.imageOverlay("Gta5MapCayo_4k_q80.jpg", bounds).addTo(map);
 map.fitBounds(bounds);
 
 // Global state
@@ -93,9 +96,10 @@ function highlightMarker(marker) {
  */
 function loadData(fileName) {
   markersGroup.clearLayers();
-  const locationsListContainer = document.getElementById("locations-list");
-  locationsListContainer.innerHTML =
-    '<h1 class="locations-title">Crime Categories</h1>';
+  const locationsListContainer = document.getElementById("locations-list-inner");
+  if (locationsListContainer) {
+    locationsListContainer.innerHTML = "";
+  }
 
   fetch(fileName)
     .then((response) => {
@@ -128,7 +132,7 @@ function loadData(fileName) {
  * Builds the sidebar and adds markers for each category.
  */
 function loadCategories(categoryIcons) {
-  const locationsListContainer = document.getElementById("locations-list");
+  const locationsListContainer = document.getElementById("locations-list-inner");
   const fragment = document.createDocumentFragment();
 
   for (const category in categories) {
@@ -178,16 +182,7 @@ function loadCategories(categoryIcons) {
       listItem.className = "locations-item";
       listItem.textContent = location.name;
       listItem.onclick = () => {
-        map.setView(
-          [parseFloat(location.lat), parseFloat(location.lng)],
-          map.getZoom(),
-          { animate: true }
-        );
-        setTimeout(() => {
-          map.panBy([0, -100], { animate: true });
-          highlightMarker(location.marker);
-          showSidePopup(location);
-        }, 300);
+        focusLocation(location);
       };
 
       panel.appendChild(listItem);
@@ -211,6 +206,34 @@ function loadCategories(categoryIcons) {
   }
 
   locationsListContainer.appendChild(fragment);
+}
+
+/**
+ * Recenters and zooms the map on the given location, then highlights it
+ * and opens the side popup.
+ */
+function focusLocation(location, options = {}) {
+  if (!location) return;
+  const lat = parseFloat(location.lat);
+  const lng = parseFloat(location.lng);
+  if (Number.isNaN(lat) || Number.isNaN(lng)) return;
+
+  const defaultZoom = 2.4;
+  const requestedZoom =
+    typeof options.zoom === "number" ? options.zoom : defaultZoom;
+  const maxZoom = map.getMaxZoom() ?? 3;
+  const minZoom = map.getMinZoom() ?? -10;
+  const clampedZoom = Math.min(maxZoom, Math.max(requestedZoom, minZoom));
+
+  map.setView([lat, lng], clampedZoom, { animate: true });
+
+  setTimeout(() => {
+    map.panBy([0, -120], { animate: true });
+    if (location.marker) {
+      highlightMarker(location.marker);
+    }
+    showSidePopup(location);
+  }, 350);
 }
 
 /**
@@ -302,14 +325,28 @@ function copyToClipboard(text) {
  */
 function getPinSVG(color) {
   return `
-    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="32px" height="32px" fill="${color}" stroke="black" stroke-width="1.5">
-      <path d="M12 2C8.69 2 6 4.69 6 8c0 4.27 5.25 11.54 5.42 11.75.3.36.85.36 1.15 0C12.75 19.54 18 12.27 18 8c0-3.31-2.69-6-6-6zm0 9.5c-1.93 0-3.5-1.57-3.5-3.5S10.07 4.5 12 4.5 15.5 6.07 15.5 8 13.93 11.5 12 11.5z"/>
-    </svg>
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="30" height="30">
+        <circle cx="12" cy="9.5" r="6" fill="${color}" stroke="#000000" stroke-width="2" />
+        <circle cx="12" cy="9.5" r="2.4" fill="rgba(15,23,42,0.95)" />
+        <rect x="11" y="13.5" width="2" height="6.5" rx="1" fill="${color}" />
+        <circle cx="12" cy="21" r="2.4" fill="rgba(15,23,42,0.5)" />
+      </svg>
   `;
 }
 
 // Create a new marker via double-click on the map (unchanged utility)
 map.on("dblclick", (e) => {
+  createMarkerWithPopup(e.latlng);
+});
+
+// Simple "create marker" mode toggled from the options dialog.
+let createMarkerMode = false;
+
+// If create-marker mode is enabled, the very next single-click on the map
+// will drop a marker at that location and open the editing popup.
+map.on("click", (e) => {
+  if (!createMarkerMode) return;
+  createMarkerMode = false;
   createMarkerWithPopup(e.latlng);
 });
 
@@ -378,6 +415,78 @@ window.onclick = (event) => {
 window.addEventListener("DOMContentLoaded", () => {
   dataSource = "categories.json";
   loadData(dataSource);
+
+  // Header options toggle for the options container (simple show/hide)
+  const optionsToggle = document.getElementById("options-toggle");
+  const optionsContainer = document.getElementById("options-container");
+  const closeOptionsButton = document.getElementById("close-options-button");
+  const createMarkerButton = document.getElementById("create-marker-button");
+  const searchInput = document.getElementById("location-search");
+  const searchResults = document.getElementById("search-results");
+
+  if (optionsToggle && optionsContainer) {
+    optionsToggle.addEventListener("click", () => {
+      optionsContainer.classList.toggle("hidden");
+    });
+  }
+
+  if (closeOptionsButton && optionsContainer) {
+    closeOptionsButton.addEventListener("click", () => {
+      optionsContainer.classList.add("hidden");
+    });
+  }
+
+   // Wire up the "Create Marker" button so the next map click places a marker
+  if (createMarkerButton && optionsContainer) {
+    createMarkerButton.addEventListener("click", () => {
+      createMarkerMode = true;
+      optionsContainer.classList.add("hidden");
+    });
+  }
+
+  // Simple search over all locations by name
+  if (searchInput && searchResults) {
+    searchInput.addEventListener("input", () => {
+      const query = searchInput.value.trim().toLowerCase();
+      searchResults.innerHTML = "";
+
+      if (!query) {
+        searchResults.style.display = "none";
+        return;
+      }
+
+      const matches = [];
+      for (const category in categories) {
+        const categoryData = categories[category];
+        if (!categoryData || !Array.isArray(categoryData.locations)) continue;
+        categoryData.locations.forEach((location) => {
+          if (
+            location.name &&
+            location.name.toLowerCase().includes(query)
+          ) {
+            matches.push({ location, category });
+          }
+        });
+      }
+
+      if (!matches.length) {
+        searchResults.style.display = "none";
+        return;
+      }
+
+      searchResults.style.display = "block";
+      matches.slice(0, 25).forEach(({ location, category }) => {
+        const item = document.createElement("div");
+        item.className = "search-result-item";
+        item.textContent = `${location.name} · ${category}`;
+        item.addEventListener("click", () => {
+          focusLocation(location, { zoom: 2.7 });
+          searchInput.blur();
+        });
+        searchResults.appendChild(item);
+      });
+    });
+  }
 });
 
 // Set the initial zoom level (if needed)

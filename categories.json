@@ -19,7 +19,6 @@
     "Money Cleaning": {
       "color": "Green",
       "locations": [
-        {"id":1735002891185,"lat":"188.750000","lng":"532.687500","name":"Cargo Run","img":"https://i.ibb.co/stKp09q/image.png"},
         {"id":1728149655732,"lat":"682.687500","lng":"765.562500","name":"Stripper Run","img":"https://i.ibb.co/h21Wcrh/image.png"}
       ]
     },
@@ -55,14 +54,13 @@
       "locations": [
         {"id":1728139997572,"lat":"324.812500","lng":"592.375000","name":"Grandmas","img":"https://i.ibb.co/rQ0TWyC/image.png"},
         {"id":1728142671618,"lat":"79.281250","lng":"507.062500","name":"House Sell Guy","img":"https://i.ibb.co/Pxt596z/image.png"},
-        {"id":1728149158602,"lat":"821.500000","lng":"230.000000","name":"Oil Rig","img":"https://i.ibb.co/RhJWBV8/image.png"},
         {"id":1728151081924,"lat":"249.031250","lng":"515.375000","name":"Big Pawn","img":"https://i.ibb.co/hmH4r5J/image.png"},
         {"id":1728151149593,"lat":"248.015625","lng":"515.375000","name":"Crypto Heist HDD","img":"https://i.ibb.co/c67Chkq/image.png"},
-        {"id":1739672289186,"lat":"462.625000","lng":"583.250000","name":"Small Pawn","img":"https://i.ibb.co/yBVNK2C1/image.png", "info":"Need $1000 to start"},
         {"id":1738446600777,"lat":"210.312500","lng":"489.250000","name":"Grave Robbing","img":"https://i.ibb.co/yvGKYvL/image.png"},
         {"id":1738516946876,"lat":"430.875000","lng":"519.937500","name":"Bone Meal","img":"https://i.ibb.co/WWSy4Pj7/image.png"},
         {"id":1739639920705,"lat":"127.000000","lng":"517.562500","name":"Job Cars","img":"https://i.ibb.co/Rp62TpP1/image.png","info":"Need 20 Loose Notes"},
-        {"id":1748198236120,"lat":"663.562500","lng":"521.062500","name":"Vicodin","img":"https://images.guns.lol/Pv75K.png", "info" : "Need $250"}
+        {"id":1748198236120,"lat":"663.562500","lng":"521.062500","name":"Vicodin","img":"https://images.guns.lol/Pv75K.png", "info" : "Need $250"},
+        {"id":1763572367150,"lat":"688.031250","lng":"318.687500","name":"Illegal Fish Selling","img":""}
       ]
     },
     "Tradeables": {
@@ -120,7 +118,6 @@
     "Coke Stuff": {
       "color": "#cccbc8",
       "locations": [
-        {"id":1757251001590,"lat":"416.406250","lng":"204.296875","name":"Coke Lab","img":"https://i.gyazo.com/2a93b94393da76909ed72f6055a427fa.png"},
         {"id":1728154645804,"lat":"216.828125","lng":"898.578125","name":"Fuel","img":"https://i.ibb.co/7yyJZgQ/image.png"},
         {"id":1728154699904,"lat":"215.578125","lng":"898.796875","name":"Fuel","img":"https://i.ibb.co/vPd45q3/image.png"},
         {"id":1728154920498,"lat":"214.140625","lng":"897.453125","name":"Fuel","img":"https://i.ibb.co/cwt7m6J/image.png"},

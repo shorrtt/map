@@ -60,7 +60,8 @@
         {"id":1738516946876,"lat":"430.875000","lng":"519.937500","name":"Bone Meal","img":"https://i.ibb.co/WWSy4Pj7/image.png"},
         {"id":1739639920705,"lat":"127.000000","lng":"517.562500","name":"Job Cars","img":"https://i.ibb.co/Rp62TpP1/image.png","info":"Need 20 Loose Notes"},
         {"id":1748198236120,"lat":"663.562500","lng":"521.062500","name":"Vicodin","img":"https://images.guns.lol/Pv75K.png", "info" : "Need $250"},
-        {"id":1763572367150,"lat":"688.031250","lng":"318.687500","name":"Illegal Fish Selling","img":""}
+        {"id":1763572367150,"lat":"688.031250","lng":"318.687500","name":"Illegal Fish Selling","img":""},
+        {"id":1763595836281,"lat":"618.625000","lng":"530.812500","name":"Small Pawn","img":""}
       ]
     },
     "Tradeables": {

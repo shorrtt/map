@@ -19,7 +19,8 @@
     "Money Cleaning": {
       "color": "Green",
       "locations": [
-        {"id":1728149655732,"lat":"682.687500","lng":"765.562500","name":"Stripper Run","img":"https://i.ibb.co/h21Wcrh/image.png"}
+        {"id":1728149655732,"lat":"682.687500","lng":"765.562500","name":"Stripper Run","img":"https://i.ibb.co/h21Wcrh/image.png"},
+        {"id":1763906700048,"lat":"443.750000","lng":"689.250000","name":"Cargo","img":"https://i.ibb.co/BH8tSptm/Five-M-GTAProcess-DGo-Slb-Gr-Zx.jpg"},
       ]
     },
     "Chop": {
@@ -148,4 +149,5 @@
       ]
     }
   }
+
   

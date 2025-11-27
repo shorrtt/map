@@ -82,11 +82,8 @@ function highlightMarker(marker) {
     el.classList.remove("highlighted");
     void el.offsetWidth; // force reflow to restart animation
     el.classList.add("highlighted");
-    el.addEventListener(
-      "animationend",
-      () => el.classList.remove("highlighted"),
-      { once: true }
-    );
+    // Keep the highlight persistent - don't remove it on animation end
+    // This prevents pins from disappearing or becoming invisible after being clicked
   }
 }
 
@@ -249,6 +246,17 @@ function showSidePopup(location) {
         }</p>`
       : "";
 
+  // Build related items section
+  const relatedItemsText = 
+    location.relatedItems && Array.isArray(location.relatedItems) && location.relatedItems.length > 0
+      ? `<div style="margin-top: 15px; padding-top: 10px; border-top: 1px solid rgba(255,255,255,0.2);">
+          <h3 style="margin: 0 0 8px 0; font-size: 14px;">Related Items</h3>
+          <div style="display: flex; flex-wrap: wrap; gap: 6px;">
+            ${location.relatedItems.map(item => `<span style="background: rgba(255,255,255,0.15); padding: 4px 8px; border-radius: 4px; font-size: 12px;">${item}</span>`).join('')}
+          </div>
+        </div>`
+      : "";
+
   // Skeleton placeholder for image while loading
   const content = `
     <h1>${location.name}</h1>
@@ -257,6 +265,7 @@ function showSidePopup(location) {
       <span id="side-img-loading" style="font-size:14px; opacity:0.8;">Loading image…</span>
       <img id="side-img" alt="${location.name}" title="${location.name}" style="display:none; width:100%; height:100%; object-fit:contain; cursor:pointer;" loading="lazy" />
     </div>
+    ${relatedItemsText}
   `;
 
   const popupContentEl = document.getElementById("side-popup-content");
@@ -354,12 +363,32 @@ function createMarkerWithPopup(latlng) {
   console.log("Creating marker at latlng:", latlng);
   const marker = L.marker(latlng, { draggable: true }).addTo(map);
   const popupContent = `
-    <div>
-      <label for="marker-name">Name:</label><br>
-      <input id="marker-name" type="text" placeholder="Enter location name"/><br>
-      <label for="marker-img">Image URL:</label><br>
-      <input id="marker-img" type="text" placeholder="Enter image URL"/><br><br>
-      <button id="copy-marker">Copy to Clipboard</button>
+    <div style="min-width: 300px; max-width: 400px;">
+      <h3 style="margin-top: 0; color: var(--text-primary);">Create Marker</h3>
+      
+      <label for="marker-name" style="display: block; margin-top: 12px; font-weight: 600; font-size: 13px; color: var(--text-muted);">Location Name *</label>
+      <input id="marker-name" type="text" class="popup-input" placeholder="e.g. Meth Lab 1"/><br>
+      
+      <label for="marker-img" style="display: block; margin-top: 12px; font-weight: 600; font-size: 13px; color: var(--text-muted);">Image URL</label>
+      <input id="marker-img" type="text" class="popup-input" placeholder="https://..."/><br>
+      
+      <label for="marker-info" style="display: block; margin-top: 12px; font-weight: 600; font-size: 13px; color: var(--text-muted);">Info</label>
+      <input id="marker-info" type="text" class="popup-input" placeholder="e.g. Requires 5 thermite"/><br>
+      
+      <label style="display: block; margin-top: 12px; font-weight: 600; font-size: 13px; color: var(--text-muted);">Related Items (optional)</label>
+      <small style="color: var(--text-muted); display: block; margin-bottom: 8px;">Add items this location provides/uses</small>
+      
+      <div id="related-items-container" style="margin-bottom: 12px;">
+        <div class="related-item-input" style="display: flex; gap: 8px; margin-bottom: 8px;">
+          <input type="text" class="popup-input related-item-name" placeholder="Item name" style="flex: 1; margin: 0;"/>
+          <input type="text" class="popup-input related-item-desc" placeholder="Description (optional)" style="flex: 1; margin: 0;"/>
+          <button class="remove-related-item" style="padding: 8px 12px; background: #ef4444; color: white; border: none; border-radius: 4px; cursor: pointer; min-width: 40px;">×</button>
+        </div>
+      </div>
+      
+      <button id="add-related-item" style="width: 100%; padding: 8px; margin-bottom: 12px; background: rgba(59, 130, 246, 0.2); color: #3b82f6; border: 1px solid #3b82f6; border-radius: 4px; cursor: pointer; font-size: 12px;">+ Add Item</button>
+      
+      <button id="copy-marker" class="popup-button">Copy to Clipboard</button>
     </div>
   `;
   marker.bindPopup(popupContent);
@@ -367,17 +396,63 @@ function createMarkerWithPopup(latlng) {
 
   marker.on("popupopen", () => {
     setTimeout(() => {
+      // Add related item button
+      const addItemBtn = document.getElementById("add-related-item");
+      const relatedItemsContainer = document.getElementById("related-items-container");
+      
+      if (addItemBtn) {
+        addItemBtn.addEventListener("click", () => {
+          const newItemDiv = document.createElement("div");
+          newItemDiv.className = "related-item-input";
+          newItemDiv.style.cssText = "display: flex; gap: 8px; margin-bottom: 8px;";
+          newItemDiv.innerHTML = `
+            <input type="text" class="popup-input related-item-name" placeholder="Item name" style="flex: 1; margin: 0;"/>
+            <input type="text" class="popup-input related-item-desc" placeholder="Description (optional)" style="flex: 1; margin: 0;"/>
+            <button class="remove-related-item" style="padding: 8px 12px; background: #ef4444; color: white; border: none; border-radius: 4px; cursor: pointer; min-width: 40px;">×</button>
+          `;
+          relatedItemsContainer.appendChild(newItemDiv);
+          
+          // Add remove listener to new item
+          setupRemoveButtons();
+        });
+      }
+      
+      // Setup remove buttons
+      const setupRemoveButtons = () => {
+        const removeButtons = document.querySelectorAll(".remove-related-item");
+        removeButtons.forEach(btn => {
+          btn.onclick = (e) => {
+            e.target.closest(".related-item-input").remove();
+          };
+        });
+      };
+      
+      setupRemoveButtons();
+      
       const copyButton = document.getElementById("copy-marker");
       if (copyButton) {
         copyButton.addEventListener("click", () => {
           const name = document.getElementById("marker-name").value;
           const imgUrl = document.getElementById("marker-img").value;
+          const info = document.getElementById("marker-info").value;
+          
+          // Collect related items
+          const relatedItems = [];
+          document.querySelectorAll(".related-item-input").forEach(itemDiv => {
+            const itemName = itemDiv.querySelector(".related-item-name").value.trim();
+            if (itemName) {
+              relatedItems.push(itemName);
+            }
+          });
+          
           const markerData = {
             id: Date.now(),
             lat: latlng.lat.toFixed(6),
             lng: latlng.lng.toFixed(6),
-            name: name,
-            img: imgUrl,
+            name: name || "New Location",
+            img: imgUrl || "",
+            info: info || "",
+            relatedItems: relatedItems,
           };
           const formattedData = JSON.stringify(markerData);
           copyToClipboard(formattedData);
@@ -444,7 +519,7 @@ window.addEventListener("DOMContentLoaded", () => {
     });
   }
 
-  // Simple search over all locations by name
+  // Simple search over all locations by name and related items
   if (searchInput && searchResults) {
     searchInput.addEventListener("input", () => {
       const query = searchInput.value.trim().toLowerCase();
@@ -452,22 +527,62 @@ window.addEventListener("DOMContentLoaded", () => {
 
       if (!query) {
         searchResults.style.display = "none";
+        // Show all markers
+        for (const category in categories) {
+          const categoryData = categories[category];
+          if (!categoryData || !Array.isArray(categoryData.locations)) continue;
+          categoryData.locations.forEach((location) => {
+            if (location.marker) {
+              markersGroup.addLayer(location.marker);
+            }
+          });
+        }
         return;
       }
 
       const matches = [];
+      const matchedLocationIds = new Set();
+      
       for (const category in categories) {
         const categoryData = categories[category];
         if (!categoryData || !Array.isArray(categoryData.locations)) continue;
         categoryData.locations.forEach((location) => {
-          if (
-            location.name &&
-            location.name.toLowerCase().includes(query)
-          ) {
-            matches.push({ location, category });
+          // Check if location name matches
+          const nameMatches = location.name && location.name.toLowerCase().includes(query);
+          
+          // Check if any related item matches and capture which ones
+          const matchingRelatedItems = 
+            location.relatedItems && 
+            Array.isArray(location.relatedItems) && 
+            location.relatedItems.filter(item => item.toLowerCase().includes(query));
+          
+          const relatedItemMatches = matchingRelatedItems && matchingRelatedItems.length > 0;
+
+          // Include location if name matches OR related item matches
+          if (nameMatches || relatedItemMatches) {
+            matches.push({ location, category, matchedRelatedItems: matchingRelatedItems || [] });
+            matchedLocationIds.add(location.name); // Track matched locations
           }
         });
       }
+
+      // Hide all markers first
+      for (const category in categories) {
+        const categoryData = categories[category];
+        if (!categoryData || !Array.isArray(categoryData.locations)) continue;
+        categoryData.locations.forEach((location) => {
+          if (location.marker) {
+            markersGroup.removeLayer(location.marker);
+          }
+        });
+      }
+
+      // Show only matched markers
+      matches.forEach(({ location }) => {
+        if (location.marker) {
+          markersGroup.addLayer(location.marker);
+        }
+      });
 
       if (!matches.length) {
         searchResults.style.display = "none";
@@ -475,10 +590,17 @@ window.addEventListener("DOMContentLoaded", () => {
       }
 
       searchResults.style.display = "block";
-      matches.slice(0, 25).forEach(({ location, category }) => {
+      matches.slice(0, 25).forEach(({ location, category, matchedRelatedItems }) => {
         const item = document.createElement("div");
         item.className = "search-result-item";
-        item.textContent = `${location.name} · ${category}`;
+        
+        // Build display text with matched related items highlighted
+        let displayText = `${location.name} · ${category}`;
+        if (matchedRelatedItems && matchedRelatedItems.length > 0) {
+          displayText += ` [${matchedRelatedItems.join(", ")}]`;
+        }
+        
+        item.textContent = displayText;
         item.addEventListener("click", () => {
           focusLocation(location, { zoom: 2.7 });
           searchInput.blur();

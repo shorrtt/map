@@ -60,9 +60,9 @@
         {"id":1738446600777,"lat":"210.312500","lng":"489.250000","name":"Grave Robbing","img":"https://i.ibb.co/yvGKYvL/image.png","relatedItems":[]},
         {"id":1738516946876,"lat":"430.875000","lng":"519.937500","name":"Bone Meal","img":"https://i.ibb.co/WWSy4Pj7/image.png","relatedItems":[]},
         {"id":1739639920705,"lat":"127.000000","lng":"517.562500","name":"Job Cars","img":"https://i.ibb.co/Rp62TpP1/image.png","info":"Need 20 Loose Notes","relatedItems":[]},
-        {"id":1748198236120,"lat":"663.562500","lng":"521.062500","name":"Vicodin","img":"https://images.guns.lol/Pv75K.png", "info" : "Need $250","relatedItems":[]},
-        {"id":1763572367150,"lat":"688.031250","lng":"318.687500","name":"Illegal Fish Selling","img":"","relatedItems":[]},
-        {"id":1763595836281,"lat":"618.625000","lng":"530.812500","name":"Small Pawn","img":"","relatedItems":[]}
+        {"id":1748198236120,"lat":"663.562500","lng":"521.062500","name":"Vicodin","img":"https://images.guns.lol/Pv75K.png", "info" : "Need $250","relatedItems":["Loose Notes"]},
+        {"id":1764260124120,"lat":"535.000000","lng":"289.937500","name":"Illegal fish selling","img":"","info":"","relatedItems":["https://docs.google.com/document/d/1hX0i4EmN7_3I3ktrLOLDoCoTKppP4WSiqACopLbwn8c/edit?tab=t.0#heading=h.twqc6qeregge"]},
+        {"id":1764260278481,"lat":"613.593750","lng":"532.031250","name":"Small Pawn","img":"","info":"Need $1000","relatedItems":["Casio Watch","Pixel 3 Phone","2ct Chain","Nintendo 64", "Oakley Sunglasses", "Gameboy", "Used Laptop", "Watch", "PSP"]}
       ]
     },
     "Tradeables": {

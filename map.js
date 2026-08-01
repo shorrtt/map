@@ -281,39 +281,6 @@ async function clearAllLocations() {
  * Merge incoming locations into the current database value without deleting
  * locations saved by another client. Existing records win on ID collisions.
  */
-function mergePersistedCategories(currentValue, incomingValue) {
-  const merged = createPersistableCategories(currentValue || {});
-  const incoming = createPersistableCategories(incomingValue || {});
-
-  for (const [categoryName, incomingCategory] of Object.entries(incoming)) {
-    const existingCategory = merged[categoryName];
-    if (!existingCategory) {
-      merged[categoryName] = incomingCategory;
-      continue;
-    }
-
-    const knownLocations = new Set(
-      existingCategory.locations.map((location) => getLocationIdentity(location))
-    );
-    for (const location of incomingCategory.locations) {
-      const identity = getLocationIdentity(location);
-      if (!knownLocations.has(identity)) {
-        existingCategory.locations.push(location);
-        knownLocations.add(identity);
-      }
-    }
-
-    if (!existingCategory.color && incomingCategory.color) {
-      existingCategory.color = incomingCategory.color;
-    }
-    if (incomingCategory.icon) {
-      existingCategory.icon = incomingCategory.icon;
-    }
-  }
-
-  return merged;
-}
-
 function getCategoryColor(categoryName) {
   const palette = ["#60a5fa", "#34d399", "#f59e0b", "#a78bfa", "#f472b6", "#fb923c"];
   const index = Math.abs(categoryName.split("").reduce((sum, char) => sum + char.charCodeAt(0), 0)) % palette.length;
@@ -642,13 +609,9 @@ function loadData(fileName) {
     }
 
     const remoteCategories = await loadRemoteCategories();
-    if (remoteCategories) {
-      categories = normalizeCategories(
-        persistedCategories
-          ? mergePersistedCategories(remoteCategories, persistedCategories)
-          : remoteCategories
-      );
-      await persistCategories({ syncRemote: !!persistedCategories });
+    if (remoteCategories !== null && remoteCategories !== undefined) {
+      categories = normalizeCategories(remoteCategories);
+      await persistCategories({ syncRemote: true });
       rebuildMap();
       updateSyncStatus("Firebase");
       return;

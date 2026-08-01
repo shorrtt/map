@@ -1,10 +1,10 @@
-const CACHE_NAME = "cdn-cache-v1";
+// Bump this whenever the app shell changes so deployed clients discard stale files.
+const CACHE_NAME = "map-shell-v2";
 const urlsToCache = [
-  // Cache the core files
-  "/",
-  "/index.html",
-  "/style.css",
-  "/map.js",
+  new URL("./", self.registration.scope).href,
+  new URL("./index.html", self.registration.scope).href,
+  new URL("./style.css", self.registration.scope).href,
+  new URL("./map.js", self.registration.scope).href,
 ];
 
 self.addEventListener("install", (event) => {
@@ -32,12 +32,19 @@ self.addEventListener("fetch", (event) => {
         });
       })
     );
-  } else {
-    // For other requests, try the cache, falling back to the network.
+  } else if (requestUrl.origin === self.location.origin) {
+    // Keep the deployed app current while still working offline after a visit.
     event.respondWith(
-      caches.match(event.request).then((response) => {
-        return response || fetch(event.request);
-      })
+      fetch(event.request)
+        .then((networkResponse) => {
+          if (networkResponse.ok) {
+            caches.open(CACHE_NAME).then((cache) => {
+              cache.put(event.request, networkResponse.clone());
+            });
+          }
+          return networkResponse;
+        })
+        .catch(() => caches.match(event.request))
     );
   }
 });

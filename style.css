@@ -1240,6 +1240,95 @@ textarea:focus-visible,
   }
 }
 
+/* Custom form controls: avoid browser-default select and file-input chrome. */
+.category-select-shell {
+  position: relative;
+}
+
+.category-select-shell::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  right: 11px;
+  width: 7px;
+  height: 7px;
+  border-right: 1.5px solid #bfdbfe;
+  border-bottom: 1.5px solid #bfdbfe;
+  pointer-events: none;
+  transform: translateY(-65%) rotate(45deg);
+}
+
+.category-select-mark {
+  position: absolute;
+  top: 50%;
+  left: 11px;
+  z-index: 1;
+  color: #93c5fd;
+  font-size: 9px;
+  pointer-events: none;
+  transform: translateY(-50%);
+}
+
+.create-location-form #marker-category-select {
+  appearance: none;
+  min-height: 38px;
+  padding-right: 32px;
+  padding-left: 27px;
+  border-color: rgba(147, 197, 253, 0.34);
+  background: linear-gradient(135deg, rgba(36, 50, 71, 0.95), rgba(24, 33, 48, 0.96));
+  color: #e0edff;
+  cursor: pointer;
+}
+
+.create-location-form #marker-category-select:hover {
+  border-color: rgba(147, 197, 253, 0.6);
+  background: linear-gradient(135deg, rgba(43, 61, 85, 0.98), rgba(28, 40, 57, 0.98));
+}
+
+.create-location-form #marker-category-select option,
+#options-container select option {
+  background: #111823;
+  color: #e5edf8;
+}
+
+.create-location-form #marker-category-custom {
+  margin-top: 6px;
+  border-color: rgba(147, 197, 253, 0.3);
+}
+
+input[type="file"] {
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+input[type="file"]::file-selector-button {
+  margin: -7px 10px -7px -9px;
+  padding: 7px 10px;
+  border: 0;
+  border-right: 1px solid var(--border-subtle);
+  background: rgba(96, 165, 250, 0.14);
+  color: #bfdbfe;
+  cursor: pointer;
+  font-weight: 600;
+}
+
+input[type="file"]::file-selector-button:hover {
+  background: rgba(96, 165, 250, 0.25);
+}
+
+select.popup-input {
+  appearance: none;
+  padding-right: 30px;
+  background-image: linear-gradient(45deg, transparent 50%, #9fb3ca 50%), linear-gradient(135deg, #9fb3ca 50%, transparent 50%);
+  background-position: calc(100% - 14px) 50%, calc(100% - 10px) 50%;
+  background-size: 4px 4px, 4px 4px;
+  background-repeat: no-repeat;
+}
+
+button {
+  -webkit-tap-highlight-color: transparent;
+}
+
 .recipe-image {
   width: 50px;
   height: 50px;

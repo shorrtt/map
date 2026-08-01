@@ -754,10 +754,13 @@ function createMarkerWithPopup(latlng) {
       <h3 class="create-location-title">Add Location</h3>
 
       <label class="create-location-label" for="marker-category-select">Category</label>
-      <select id="marker-category-select" class="popup-input">
-        ${categoryOptions}
-        <option value="__new__">+ New category</option>
-      </select>
+      <div class="category-select-shell">
+        <span class="category-select-mark" aria-hidden="true">◆</span>
+        <select id="marker-category-select" class="popup-input">
+          ${categoryOptions}
+          <option value="__new__">+ New category</option>
+        </select>
+      </div>
       <input id="marker-category-custom" type="text" class="popup-input" placeholder="New category name" />
 
       <label class="create-location-label" for="marker-name">Location name <span>*</span></label>

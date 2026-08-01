@@ -750,53 +750,56 @@ function createMarkerWithPopup(latlng) {
     : "<option value=\"\">Create new category</option>";
 
   const popupContent = `
-    <div style="min-width: 320px; max-width: 420px;">
-      <h3 style="margin-top: 0; color: var(--text-primary);">Add Location</h3>
+    <div class="create-location-form">
+      <h3 class="create-location-title">Add Location</h3>
 
-      <label for="marker-category-select" style="display: block; margin-top: 10px; font-weight: 600; font-size: 13px; color: var(--text-muted);">Category</label>
+      <label class="create-location-label" for="marker-category-select">Category</label>
       <select id="marker-category-select" class="popup-input">
         ${categoryOptions}
         <option value="__new__">+ New category</option>
       </select>
-      <input id="marker-category-custom" type="text" class="popup-input" placeholder="New category name" style="display: none;" />
+      <input id="marker-category-custom" type="text" class="popup-input" placeholder="New category name" />
 
-      <label for="marker-name" style="display: block; margin-top: 10px; font-weight: 600; font-size: 13px; color: var(--text-muted);">Location Name *</label>
+      <label class="create-location-label" for="marker-name">Location name <span>*</span></label>
       <input id="marker-name" type="text" class="popup-input" placeholder="e.g. Meth Lab 1" />
 
-      <label for="marker-category-icon" style="display: block; margin-top: 10px; font-weight: 600; font-size: 13px; color: var(--text-muted);">Category Icon</label>
+      <label class="create-location-label" for="marker-category-icon">Category icon</label>
       <input id="marker-category-icon" type="text" class="popup-input" placeholder="mdi:map-marker or heroicons:home" />
-      <small style="color: var(--text-muted); display: block; margin-bottom: 8px;">Use an Iconify icon name such as mdi:map-marker or heroicons:home.</small>
+      <small class="create-location-help">Use an Iconify icon name, such as <code>mdi:map-marker</code>.</small>
 
-      <label style="display: block; margin-top: 10px; font-weight: 600; font-size: 13px; color: var(--text-muted);">Images</label>
-      <div id="image-urls-container" style="margin-bottom: 8px;">
-        <div class="image-url-row" style="display: flex; gap: 8px; margin-bottom: 8px;">
-          <input type="text" class="popup-input image-url-input" placeholder="https://..." style="flex: 1; margin: 0;" />
-          <button class="remove-image-url" style="padding: 8px 12px; background: #ef4444; color: white; border: none; border-radius: 4px; cursor: pointer; min-width: 40px;">×</button>
+      <div class="create-location-section">
+        <label class="create-location-label">Images</label>
+        <div id="image-urls-container" class="create-location-rows">
+          <div class="image-url-row create-location-row">
+            <input type="text" class="popup-input image-url-input" placeholder="https://..." />
+            <button class="remove-image-url remove-location-row" type="button" aria-label="Remove image">&times;</button>
+          </div>
         </div>
+        <button id="add-image-url" class="add-location-row" type="button">+ Add image</button>
       </div>
-      <button id="add-image-url" style="width: 100%; padding: 8px; margin-bottom: 12px; background: rgba(59, 130, 246, 0.2); color: #3b82f6; border: 1px solid #3b82f6; border-radius: 4px; cursor: pointer; font-size: 12px;">+ Add Image</button>
 
-      <label for="marker-info" style="display: block; margin-top: 10px; font-weight: 600; font-size: 13px; color: var(--text-muted);">Info</label>
+      <label class="create-location-label" for="marker-info">Info</label>
       <input id="marker-info" type="text" class="popup-input" placeholder="e.g. Requires 5 thermite" />
 
-      <label for="marker-guide-title" style="display: block; margin-top: 10px; font-weight: 600; font-size: 13px; color: var(--text-muted);">Quick Guide Title</label>
+      <label class="create-location-label" for="marker-guide-title">Quick guide title</label>
       <input id="marker-guide-title" type="text" class="popup-input" placeholder="Quick Guide" />
 
-      <label for="marker-guide-steps" style="display: block; margin-top: 10px; font-weight: 600; font-size: 13px; color: var(--text-muted);">Quick Guide Steps</label>
-      <textarea id="marker-guide-steps" class="popup-input" rows="4" placeholder="One step per line"></textarea>
+      <label class="create-location-label" for="marker-guide-steps">Quick guide steps</label>
+      <textarea id="marker-guide-steps" class="popup-input" rows="3" placeholder="One step per line"></textarea>
 
-      <label style="display: block; margin-top: 10px; font-weight: 600; font-size: 13px; color: var(--text-muted);">Related Items (optional)</label>
-      <small style="color: var(--text-muted); display: block; margin-bottom: 8px;">Add items this location provides or uses</small>
-
-      <div id="related-items-container" style="margin-bottom: 12px;">
-        <div class="related-item-input" style="display: flex; gap: 8px; margin-bottom: 8px;">
-          <input type="text" class="popup-input related-item-name" placeholder="Item name" style="flex: 1; margin: 0;" />
-          <button class="remove-related-item" style="padding: 8px 12px; background: #ef4444; color: white; border: none; border-radius: 4px; cursor: pointer; min-width: 40px;">×</button>
+      <div class="create-location-section">
+        <label class="create-location-label">Related items <span class="optional-label">(optional)</span></label>
+        <small class="create-location-help">Items this location provides or uses.</small>
+        <div id="related-items-container" class="create-location-rows">
+          <div class="related-item-input create-location-row">
+            <input type="text" class="popup-input related-item-name" placeholder="Item name" />
+            <button class="remove-related-item remove-location-row" type="button" aria-label="Remove item">&times;</button>
+          </div>
         </div>
+        <button id="add-related-item" class="add-location-row" type="button">+ Add item</button>
       </div>
 
-      <button id="add-related-item" style="width: 100%; padding: 8px; margin-bottom: 12px; background: rgba(59, 130, 246, 0.2); color: #3b82f6; border: 1px solid #3b82f6; border-radius: 4px; cursor: pointer; font-size: 12px;">+ Add Item</button>
-      <button id="save-marker" class="popup-button">Save Location</button>
+      <button id="save-marker" class="popup-button save-location-button" type="button">Save Location</button>
     </div>
   `;
   marker.bindPopup(popupContent);
@@ -824,11 +827,10 @@ function createMarkerWithPopup(latlng) {
       if (addItemBtn && relatedItemsContainer) {
         addItemBtn.addEventListener("click", () => {
           const newItemDiv = document.createElement("div");
-          newItemDiv.className = "related-item-input";
-          newItemDiv.style.cssText = "display: flex; gap: 8px; margin-bottom: 8px;";
+          newItemDiv.className = "related-item-input create-location-row";
           newItemDiv.innerHTML = `
-            <input type="text" class="popup-input related-item-name" placeholder="Item name" style="flex: 1; margin: 0;" />
-            <button class="remove-related-item" style="padding: 8px 12px; background: #ef4444; color: white; border: none; border-radius: 4px; cursor: pointer; min-width: 40px;">×</button>
+            <input type="text" class="popup-input related-item-name" placeholder="Item name" />
+            <button class="remove-related-item remove-location-row" type="button" aria-label="Remove item">&times;</button>
           `;
           relatedItemsContainer.appendChild(newItemDiv);
           setupRemoveButtons();
@@ -838,11 +840,10 @@ function createMarkerWithPopup(latlng) {
       if (addImageBtn && imageUrlsContainer) {
         addImageBtn.addEventListener("click", () => {
           const newImageRow = document.createElement("div");
-          newImageRow.className = "image-url-row";
-          newImageRow.style.cssText = "display: flex; gap: 8px; margin-bottom: 8px;";
+          newImageRow.className = "image-url-row create-location-row";
           newImageRow.innerHTML = `
-            <input type="text" class="popup-input image-url-input" placeholder="https://..." style="flex: 1; margin: 0;" />
-            <button class="remove-image-url" style="padding: 8px 12px; background: #ef4444; color: white; border: none; border-radius: 4px; cursor: pointer; min-width: 40px;">×</button>
+            <input type="text" class="popup-input image-url-input" placeholder="https://..." />
+            <button class="remove-image-url remove-location-row" type="button" aria-label="Remove image">&times;</button>
           `;
           imageUrlsContainer.appendChild(newImageRow);
 

@@ -704,7 +704,45 @@ textarea.popup-input {
   margin-top: 4px;
 }
 
-/* Highlighted marker styling (no animation) */
+/* Category pin styling */
+.category-pin {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+}
+
+.pin-bubble {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  border-radius: 999px;
+  background: linear-gradient(180deg, var(--pin-color, #ff1e42) 0%, color-mix(in srgb, var(--pin-color, #ff1e42) 70%, #000 30%) 100%);
+  border: 2px solid rgba(255,255,255,0.9);
+  box-shadow: 0 10px 20px rgba(0,0,0,0.35);
+  color: #fff;
+}
+
+.pin-icon {
+  font-size: 22px;
+}
+
+.category-pin::after {
+  content: "";
+  position: absolute;
+  bottom: -4px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 12px;
+  height: 12px;
+  background: var(--pin-color, #ff1e42);
+  clip-path: polygon(50% 100%, 0 0, 100% 0);
+}
+
 .leaflet-marker-icon.highlighted {
   z-index: 999999;
 }

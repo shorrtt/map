@@ -119,6 +119,7 @@ function normalizeCategories(rawCategories) {
 
     normalized[categoryName] = {
       color: categoryData?.color || getCategoryColor(categoryName),
+      icon: categoryData?.icon || categoryData?.iconName || categoryData?.iconify || null,
       locations,
     };
   }
@@ -134,8 +135,25 @@ function getCategoryColor(categoryName) {
 function persistCategories() {
   try {
     localStorage.setItem(localStorageKey, JSON.stringify(categories));
+    const encoded = encodeURIComponent(JSON.stringify(categories));
+    const nextHash = `#data=${encoded}`;
+    if (window.location.hash !== nextHash) {
+      window.history.replaceState({}, "", `${window.location.pathname}${nextHash}`);
+    }
   } catch (error) {
     console.warn("Could not persist map data:", error);
+  }
+}
+
+function loadSharedCategoriesFromHash() {
+  try {
+    if (!window.location.hash.startsWith("#data=")) return null;
+    const encoded = window.location.hash.slice("#data=".length);
+    const decoded = decodeURIComponent(encoded);
+    return normalizeCategories(JSON.parse(decoded));
+  } catch (error) {
+    console.warn("Could not load shared map data:", error);
+    return null;
   }
 }
 
@@ -151,15 +169,45 @@ function loadPersistedCategories() {
   }
 }
 
+function resolveCategoryIcon(categoryName, categoryData) {
+  const icon = categoryData?.icon || categoryData?.iconName || categoryData?.iconify;
+  if (icon) return icon;
+
+  const normalized = String(categoryName || "").toLowerCase();
+  const defaults = {
+    "container guy": "mdi:package-variant-closed",
+    "money cleaning": "mdi:cash-multiple",
+    "chop": "mdi:knife",
+    "digital den": "mdi:monitor-cellphone-star",
+    "trap houses": "mdi:home-group",
+    "misc": "mdi:shape",
+    "tradeables": "mdi:swap-horizontal",
+    "jailbreak": "mdi:lock-open-variant",
+    "meth labs": "mdi:flask",
+    "acetone": "mdi:flask-outline",
+    "coke stuff": "mdi:fire",
+    "opium stuff": "mdi:flower-tulip",
+    "meth stuff": "mdi:chemical-weapon",
+  };
+
+  for (const [match, candidate] of Object.entries(defaults)) {
+    if (normalized.includes(match)) return candidate;
+  }
+
+  return "mdi:map-marker";
+}
+
 function buildCategoryIcons(categoriesByName) {
   const categoryIcons = {};
   for (const category in categoriesByName) {
     const color = categoriesByName[category].color;
+    const iconName = resolveCategoryIcon(category, categoriesByName[category]);
     categoryIcons[category] = L.divIcon({
       className: "custom-div-icon",
-      html: getPinSVG(color),
-      iconSize: [32, 32],
-      popupAnchor: [0, -10],
+      html: getPinHTML(color, iconName),
+      iconSize: [40, 44],
+      iconAnchor: [20, 44],
+      popupAnchor: [0, -38],
     });
   }
   return categoryIcons;
@@ -247,6 +295,13 @@ function rebuildMap() {
  * No global image prefetching.
  */
 function loadData(fileName) {
+  const sharedCategories = loadSharedCategoriesFromHash();
+  if (sharedCategories) {
+    categories = sharedCategories;
+    rebuildMap();
+    return;
+  }
+
   const persistedCategories = loadPersistedCategories();
   if (persistedCategories) {
     categories = persistedCategories;
@@ -533,14 +588,13 @@ function copyToClipboard(text) {
 /**
  * Generates an SVG pin icon with the given color.
  */
-function getPinSVG(color) {
+function getPinHTML(color, iconName) {
   return `
-      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="30" height="30">
-        <circle cx="12" cy="9.5" r="6" fill="${color}" stroke="#000000" stroke-width="2" />
-        <circle cx="12" cy="9.5" r="2.4" fill="rgba(15,23,42,0.95)" />
-        <rect x="11" y="13.5" width="2" height="6.5" rx="1" fill="${color}" />
-        <circle cx="12" cy="21" r="2.4" fill="rgba(15,23,42,0.5)" />
-      </svg>
+    <div class="category-pin" style="--pin-color: ${color};">
+      <div class="pin-bubble">
+        <span class="iconify pin-icon" data-icon="${escapeHtml(iconName || "mdi:map-marker")}" data-inline="false"></span>
+      </div>
+    </div>
   `;
 }
 
@@ -585,6 +639,10 @@ function createMarkerWithPopup(latlng) {
 
       <label for="marker-name" style="display: block; margin-top: 10px; font-weight: 600; font-size: 13px; color: var(--text-muted);">Location Name *</label>
       <input id="marker-name" type="text" class="popup-input" placeholder="e.g. Meth Lab 1" />
+
+      <label for="marker-category-icon" style="display: block; margin-top: 10px; font-weight: 600; font-size: 13px; color: var(--text-muted);">Category Icon</label>
+      <input id="marker-category-icon" type="text" class="popup-input" placeholder="mdi:map-marker or heroicons:home" />
+      <small style="color: var(--text-muted); display: block; margin-bottom: 8px;">Use an Iconify icon name such as mdi:map-marker or heroicons:home.</small>
 
       <label style="display: block; margin-top: 10px; font-weight: 600; font-size: 13px; color: var(--text-muted);">Images</label>
       <div id="image-urls-container" style="margin-bottom: 8px;">
@@ -691,12 +749,16 @@ function createMarkerWithPopup(latlng) {
             ? categoryCustom?.value.trim()
             : categorySelect?.value.trim();
           const categoryName = categoryValue || "New Category";
+          const categoryIcon = document.getElementById("marker-category-icon")?.value.trim() || null;
 
           if (!categories[categoryName]) {
             categories[categoryName] = {
               color: getCategoryColor(categoryName),
+              icon: categoryIcon,
               locations: [],
             };
+          } else if (categoryIcon) {
+            categories[categoryName].icon = categoryIcon;
           }
 
           const relatedItems = [];
@@ -781,6 +843,10 @@ window.addEventListener("DOMContentLoaded", () => {
   const searchInput = document.getElementById("location-search");
   const searchResults = document.getElementById("search-results");
 
+  const exportButton = document.getElementById("export-button");
+  const importButton = document.getElementById("import-button");
+  const importFileInput = document.getElementById("import-file");
+
   if (optionsToggle && optionsContainer) {
     optionsToggle.addEventListener("click", () => {
       optionsContainer.classList.toggle("hidden");
@@ -790,6 +856,45 @@ window.addEventListener("DOMContentLoaded", () => {
   if (closeOptionsButton && optionsContainer) {
     closeOptionsButton.addEventListener("click", () => {
       optionsContainer.classList.add("hidden");
+    });
+  }
+
+  if (exportButton) {
+    exportButton.addEventListener("click", () => {
+      const blob = new Blob([JSON.stringify(categories, null, 2)], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement("a");
+      anchor.href = url;
+      anchor.download = "map-data.json";
+      anchor.click();
+      URL.revokeObjectURL(url);
+      navigator.clipboard?.writeText(JSON.stringify(categories, null, 2)).catch(() => {});
+    });
+  }
+
+  if (importButton && importFileInput) {
+    importButton.addEventListener("click", () => {
+      importFileInput.click();
+    });
+
+    importFileInput.addEventListener("change", (event) => {
+      const file = event.target.files?.[0];
+      if (!file) return;
+
+      const reader = new FileReader();
+      reader.onload = () => {
+        try {
+          const parsed = JSON.parse(reader.result);
+          categories = normalizeCategories(parsed);
+          persistCategories();
+          rebuildMap();
+          optionsContainer?.classList.add("hidden");
+        } catch (error) {
+          console.error("Failed to import data:", error);
+          alert("Import failed. Please choose a valid map JSON file.");
+        }
+      };
+      reader.readAsText(file);
     });
   }
 

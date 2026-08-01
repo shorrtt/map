@@ -705,42 +705,73 @@ textarea.popup-input {
 }
 
 /* Category pin styling */
-.category-pin {
+category-pin {
   position: relative;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   width: 44px;
   height: 44px;
+  /* 1. Unified Shadow: Moved shadow to the parent so the tail gets it too */
+  filter: drop-shadow(0 6px 8px rgba(0, 0, 0, 0.3));
+  /* 2. Interactivity: Added a bouncy transition for hover states */
+  transition: transform 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+  cursor: pointer;
+}
+
+.category-pin:hover {
+  transform: translateY(-4px) scale(1.05);
 }
 
 .pin-bubble {
+  position: relative;
+  z-index: 2; /* Keeps the bubble above the tail */
   display: flex;
   align-items: center;
   justify-content: center;
   width: 44px;
   height: 44px;
-  border-radius: 999px;
-  background: linear-gradient(180deg, var(--pin-color, #ff1e42) 0%, color-mix(in srgb, var(--pin-color, #ff1e42) 70%, #000 30%) 100%);
-  border: 2px solid rgba(255,255,255,0.9);
-  box-shadow: 0 10px 20px rgba(0,0,0,0.35);
+  border-radius: 50%;
+  /* 3. 3D Volume: Switched to a radial gradient for a spherical light source */
+  background: radial-gradient(
+    circle at 30% 30%, 
+    color-mix(in srgb, var(--pin-color, #ff1e42) 40%, white) 0%, 
+    var(--pin-color, #ff1e42) 50%, 
+    color-mix(in srgb, var(--pin-color, #ff1e42) 60%, #000) 100%
+  );
+  border: 2px solid #fff;
+  /* 4. Glossy Effect: Inner shadow creates a subtle highlight and rim lighting */
+  box-shadow: 
+    inset 0 3px 4px rgba(255, 255, 255, 0.4), 
+    inset 0 -3px 4px rgba(0, 0, 0, 0.2);
   color: #fff;
 }
 
 .pin-icon {
-  font-size: 22px;
+  font-size: 20px;
+  /* 5. Icon Contrast: Helps the icon pop against lighter pin colors */
+  text-shadow: 0 2px 3px rgba(0, 0, 0, 0.25);
 }
 
+/* 6. Cohesive Tail: Replaced clip-path with a rotated square */
 .category-pin::after {
   content: "";
   position: absolute;
-  bottom: -4px;
+  bottom: -5px;
   left: 50%;
-  transform: translateX(-50%);
-  width: 12px;
-  height: 12px;
-  background: var(--pin-color, #ff1e42);
-  clip-path: polygon(50% 100%, 0 0, 100% 0);
+  margin-left: -7px;
+  width: 14px;
+  height: 14px;
+  /* Matches the darker bottom of the bubble's gradient */
+  background: color-mix(in srgb, var(--pin-color, #ff1e42) 60%, #000);
+  /* Adds the same white border, but only to the exposed sides */
+  border: 2px solid #fff;
+  border-top: none;
+  border-left: none;
+  /* Softens the very tip of the pin */
+  border-bottom-right-radius: 3px; 
+  transform: rotate(45deg);
+  z-index: 1;
 }
 
 .leaflet-marker-icon.highlighted {

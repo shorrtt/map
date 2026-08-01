@@ -66,17 +66,42 @@ function normalizeGuide(guide) {
   };
 }
 
+function normalizeImages(rawLocation) {
+  const values = [];
+
+  const pushValue = (value) => {
+    if (typeof value === "string") {
+      const trimmed = value.trim();
+      if (trimmed) values.push(trimmed);
+    } else if (Array.isArray(value)) {
+      value.forEach(pushValue);
+    }
+  };
+
+  if (rawLocation?.images) {
+    pushValue(rawLocation.images);
+  } else if (rawLocation?.imgs) {
+    pushValue(rawLocation.imgs);
+  } else if (rawLocation?.img) {
+    pushValue(rawLocation.img);
+  }
+
+  return values;
+}
+
 function normalizeLocation(rawLocation, categoryName, index) {
   const relatedItems = Array.isArray(rawLocation?.relatedItems)
     ? rawLocation.relatedItems.filter(Boolean).map((item) => String(item))
     : [];
+  const images = normalizeImages(rawLocation);
 
   return {
     id: rawLocation?.id ?? Date.now() + index,
     lat: rawLocation?.lat != null ? String(rawLocation.lat) : "",
     lng: rawLocation?.lng != null ? String(rawLocation.lng) : "",
     name: rawLocation?.name || `${categoryName} ${index + 1}`,
-    img: rawLocation?.img || "",
+    img: images[0] || rawLocation?.img || "",
+    images,
     info: rawLocation?.info || "",
     relatedItems,
     guide: normalizeGuide(rawLocation?.guide),
@@ -138,6 +163,13 @@ function buildCategoryIcons(categoriesByName) {
     });
   }
   return categoryIcons;
+}
+
+function getLocationImages(location) {
+  if (!location) return [];
+  if (Array.isArray(location.images) && location.images.length) return location.images;
+  if (typeof location.img === "string" && location.img.trim()) return [location.img.trim()];
+  return [];
 }
 
 /**
@@ -280,7 +312,8 @@ function renderCategoriesAndMarkers(categoryIcons) {
       location.marker = marker;
 
       // Keep track for warmCache later
-      if (location.img) categoryImageUrls.push(location.img);
+      const images = getLocationImages(location);
+      if (images.length) categoryImageUrls.push(...images);
 
       marker.on("click", function () {
         highlightMarker(this);
@@ -366,6 +399,38 @@ function renderQuickGuide(location) {
   `;
 }
 
+function renderLocationGallery(location) {
+  const imageUrls = getLocationImages(location);
+
+  if (!imageUrls.length) {
+    return `
+      <div id="side-img-wrap" style="width:100%; aspect-ratio: 16 / 9; background: rgba(255,255,255,0.06); display:flex; align-items:center; justify-content:center; border-radius:6px; overflow:hidden; margin-bottom:10px;">
+        <span id="side-img-loading" style="font-size:14px; opacity:0.8;">No image available.</span>
+      </div>
+    `;
+  }
+
+  const thumbs = imageUrls
+    .map(
+      (imageUrl, index) => `
+        <button class="gallery-thumb" type="button" data-image-url="${escapeHtml(imageUrl)}" aria-label="Show image ${index + 1}">
+          <img src="${escapeHtml(imageUrl)}" alt="${escapeHtml(location.name)} ${index + 1}" loading="lazy" />
+        </button>
+      `
+    )
+    .join("");
+
+  return `
+    <div class="gallery-shell">
+      <div id="side-img-wrap" style="width:100%; aspect-ratio: 16 / 9; background: rgba(255,255,255,0.06); display:flex; align-items:center; justify-content:center; border-radius:6px; overflow:hidden; margin-bottom:10px;">
+        <span id="side-img-loading" style="font-size:14px; opacity:0.8;">Loading image…</span>
+        <img id="side-img" alt="${escapeHtml(location.name)}" title="${escapeHtml(location.name)}" style="display:none; width:100%; height:100%; object-fit:contain; cursor:pointer;" loading="lazy" />
+      </div>
+      ${imageUrls.length > 1 ? `<div class="gallery-thumbs">${thumbs}</div>` : ""}
+    </div>
+  `;
+}
+
 function showSidePopup(location) {
   const infoText = location.info
     ? `<p style="margin-top: 5px; font-style: italic;">${escapeHtml(location.info)}</p>`
@@ -386,10 +451,7 @@ function showSidePopup(location) {
   const content = `
     <h1>${escapeHtml(location.name)}</h1>
     ${infoText}
-    <div id="side-img-wrap" style="width:100%; aspect-ratio: 16 / 9; background: rgba(255,255,255,0.06); display:flex; align-items:center; justify-content:center; border-radius:6px; overflow:hidden; margin-bottom:10px;">
-      <span id="side-img-loading" style="font-size:14px; opacity:0.8;">Loading image…</span>
-      <img id="side-img" alt="${escapeHtml(location.name)}" title="${escapeHtml(location.name)}" style="display:none; width:100%; height:100%; object-fit:contain; cursor:pointer;" loading="lazy" />
-    </div>
+    ${renderLocationGallery(location)}
     ${quickGuideText}
     ${relatedItemsText}
   `;
@@ -400,10 +462,12 @@ function showSidePopup(location) {
 
   const imgEl = popupContentEl.querySelector("#side-img");
   const loadingEl = popupContentEl.querySelector("#side-img-loading");
+  const imageUrls = getLocationImages(location);
 
-  if (location.img) {
-    // Load only now, then show
-    loadImage(location.img)
+  const showImage = (imageUrl) => {
+    if (!imgEl || !imageUrl) return;
+
+    loadImage(imageUrl)
       .then((url) => {
         imgEl.src = url;
         imgEl.style.display = "block";
@@ -412,9 +476,20 @@ function showSidePopup(location) {
       .catch(() => {
         if (loadingEl) loadingEl.textContent = "Failed to load image.";
       });
-  } else {
-    if (loadingEl) loadingEl.textContent = "No image available.";
+  };
+
+  if (imageUrls.length) {
+    showImage(imageUrls[0]);
+  } else if (loadingEl) {
+    loadingEl.textContent = "No image available.";
   }
+
+  popupContentEl.querySelectorAll(".gallery-thumb").forEach((thumbButton) => {
+    thumbButton.addEventListener("click", () => {
+      const imageUrl = thumbButton.dataset.imageUrl;
+      if (imageUrl) showImage(imageUrl);
+    });
+  });
 
   imgEl?.addEventListener("click", function () {
     if (imgEl.src) openModal(imgEl.src);
@@ -511,8 +586,14 @@ function createMarkerWithPopup(latlng) {
       <label for="marker-name" style="display: block; margin-top: 10px; font-weight: 600; font-size: 13px; color: var(--text-muted);">Location Name *</label>
       <input id="marker-name" type="text" class="popup-input" placeholder="e.g. Meth Lab 1" />
 
-      <label for="marker-img" style="display: block; margin-top: 10px; font-weight: 600; font-size: 13px; color: var(--text-muted);">Image URL</label>
-      <input id="marker-img" type="text" class="popup-input" placeholder="https://..." />
+      <label style="display: block; margin-top: 10px; font-weight: 600; font-size: 13px; color: var(--text-muted);">Images</label>
+      <div id="image-urls-container" style="margin-bottom: 8px;">
+        <div class="image-url-row" style="display: flex; gap: 8px; margin-bottom: 8px;">
+          <input type="text" class="popup-input image-url-input" placeholder="https://..." style="flex: 1; margin: 0;" />
+          <button class="remove-image-url" style="padding: 8px 12px; background: #ef4444; color: white; border: none; border-radius: 4px; cursor: pointer; min-width: 40px;">×</button>
+        </div>
+      </div>
+      <button id="add-image-url" style="width: 100%; padding: 8px; margin-bottom: 12px; background: rgba(59, 130, 246, 0.2); color: #3b82f6; border: 1px solid #3b82f6; border-radius: 4px; cursor: pointer; font-size: 12px;">+ Add Image</button>
 
       <label for="marker-info" style="display: block; margin-top: 10px; font-weight: 600; font-size: 13px; color: var(--text-muted);">Info</label>
       <input id="marker-info" type="text" class="popup-input" placeholder="e.g. Requires 5 thermite" />
@@ -543,7 +624,9 @@ function createMarkerWithPopup(latlng) {
   marker.on("popupopen", () => {
     setTimeout(() => {
       const addItemBtn = document.getElementById("add-related-item");
+      const addImageBtn = document.getElementById("add-image-url");
       const relatedItemsContainer = document.getElementById("related-items-container");
+      const imageUrlsContainer = document.getElementById("image-urls-container");
       const categorySelect = document.getElementById("marker-category-select");
       const categoryCustom = document.getElementById("marker-category-custom");
       const saveButton = document.getElementById("save-marker");
@@ -568,6 +651,23 @@ function createMarkerWithPopup(latlng) {
           `;
           relatedItemsContainer.appendChild(newItemDiv);
           setupRemoveButtons();
+        });
+      }
+
+      if (addImageBtn && imageUrlsContainer) {
+        addImageBtn.addEventListener("click", () => {
+          const newImageRow = document.createElement("div");
+          newImageRow.className = "image-url-row";
+          newImageRow.style.cssText = "display: flex; gap: 8px; margin-bottom: 8px;";
+          newImageRow.innerHTML = `
+            <input type="text" class="popup-input image-url-input" placeholder="https://..." style="flex: 1; margin: 0;" />
+            <button class="remove-image-url" style="padding: 8px 12px; background: #ef4444; color: white; border: none; border-radius: 4px; cursor: pointer; min-width: 40px;">×</button>
+          `;
+          imageUrlsContainer.appendChild(newImageRow);
+
+          newImageRow.querySelector(".remove-image-url")?.addEventListener("click", () => {
+            newImageRow.remove();
+          });
         });
       }
 
@@ -612,6 +712,11 @@ function createMarkerWithPopup(latlng) {
             .map((step) => step.trim())
             .filter(Boolean) || [];
           const guideTitle = document.getElementById("marker-guide-title")?.value.trim() || "Quick Guide";
+          const images = [];
+          document.querySelectorAll(".image-url-input").forEach((imageInput) => {
+            const imageUrl = imageInput.value.trim();
+            if (imageUrl) images.push(imageUrl);
+          });
 
           const locationData = normalizeLocation(
             {
@@ -619,7 +724,8 @@ function createMarkerWithPopup(latlng) {
               lat: latlng.lat.toFixed(6),
               lng: latlng.lng.toFixed(6),
               name,
-              img: document.getElementById("marker-img")?.value.trim() || "",
+              img: images[0] || "",
+              images,
               info: document.getElementById("marker-info")?.value.trim() || "",
               relatedItems,
               guide: guideSteps.length

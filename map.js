@@ -35,7 +35,6 @@ let firebaseAuth = null;
 let firebaseSyncReady = false;
 let firebaseSyncEnabled = false;
 let firebaseSyncPromise = null;
-let firebaseWriteQueue = Promise.resolve();
 const firebaseInvalidKeyPattern = /[.#$[\]/\u0000-\u001F\u007F]/;
 
 function escapeHtml(value) {
@@ -263,10 +262,19 @@ function deleteLocation(location) {
     }
   }
 
-  document.getElementById("side-popup").style.display = "none";
+  const sidePopup = document.getElementById("side-popup");
+  if (sidePopup) sidePopup.style.display = "none";
+
   void persistCategories().finally(() => {
     rebuildMap();
   });
+}
+
+async function clearAllLocations() {
+  if (!window.confirm("Remove every location from this map and clear the shared data?")) return;
+  categories = {};
+  await persistCategories();
+  rebuildMap();
 }
 
 /**
@@ -411,21 +419,8 @@ async function persistCategories({ syncRemote = true } = {}) {
 
   updateSyncStatus("saving...");
 
-  const writeOperation = async () => {
-    const result = await firebaseDb.ref(firebaseDataPath).transaction(
-      (currentValue) => mergePersistedCategories(currentValue, payload),
-      undefined,
-      false
-    );
-    if (!result.committed) {
-      throw new Error("Firebase cancelled the save transaction.");
-    }
-  };
-
-  firebaseWriteQueue = firebaseWriteQueue.catch(() => {}).then(writeOperation);
-
   try {
-    await firebaseWriteQueue;
+    await firebaseDb.ref(firebaseDataPath).set(payload);
     updateSyncStatus("Firebase");
     return {
       localSaved: localResult.saved,
@@ -914,8 +909,13 @@ function showSidePopup(location) {
     });
   });
 
-  popupContentEl.querySelector("#delete-location-button")?.addEventListener("click", () => {
-    deleteLocation(location);
+  popupContentEl.addEventListener("click", (event) => {
+    const deleteButton = event.target.closest("#delete-location-button");
+    if (deleteButton) {
+      event.preventDefault();
+      event.stopPropagation();
+      deleteLocation(location);
+    }
   });
 
   imgEl?.addEventListener("click", function () {
@@ -1285,6 +1285,7 @@ window.addEventListener("DOMContentLoaded", () => {
   const optionsContainer = document.getElementById("options-container");
   const closeOptionsButton = document.getElementById("close-options-button");
   const createMarkerButton = document.getElementById("create-marker-button");
+  const clearAllButton = document.getElementById("clear-all-button");
   const searchInput = document.getElementById("location-search");
   const searchResults = document.getElementById("search-results");
 
@@ -1365,6 +1366,13 @@ window.addEventListener("DOMContentLoaded", () => {
     createMarkerButton.addEventListener("click", () => {
       createMarkerMode = true;
       optionsContainer.classList.add("hidden");
+    });
+  }
+
+  if (clearAllButton) {
+    clearAllButton.addEventListener("click", async () => {
+      await clearAllLocations();
+      optionsContainer?.classList.add("hidden");
     });
   }
 

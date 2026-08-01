@@ -35,6 +35,7 @@ let firebaseAuth = null;
 let firebaseSyncReady = false;
 let firebaseSyncEnabled = false;
 let firebaseSyncPromise = null;
+const firebaseSyncedOnceKey = "echo-map-has-synced-v1";
 const firebaseInvalidKeyPattern = /[.#$[\]/\u0000-\u001F\u007F]/;
 
 function escapeHtml(value) {
@@ -112,6 +113,7 @@ function normalizeLocation(rawLocation, categoryName, index) {
     info: rawLocation?.info || "",
     relatedItems,
     guide: normalizeGuide(rawLocation?.guide),
+    lastUpdatedBy: rawLocation?.lastUpdatedBy || null,
   };
 }
 
@@ -162,6 +164,10 @@ function createPersistableLocation(rawLocation, categoryName, index) {
     info: String(rawLocation?.info || "").trim().slice(0, 1000),
     relatedItems,
   };
+
+  if (rawLocation?.lastUpdatedBy) {
+    location.lastUpdatedBy = String(rawLocation.lastUpdatedBy).slice(0, 128);
+  }
 
   if (guide?.steps?.length) {
     location.guide = {
@@ -612,27 +618,42 @@ function loadData(fileName) {
     // Firebase is enabled. Set up a real-time listener for data changes.
     const dbRef = firebaseDb.ref(firebaseDataPath);
     dbRef.on("value", (snapshot) => {
+      const hasSyncedOnce = !!localStorage.getItem(firebaseSyncedOnceKey);
       const remoteData = snapshot.val();
+
       if (remoteData && typeof remoteData === "object" && Object.keys(remoteData).length > 0) {
         // If Firebase has data, it is the source of truth.
         categories = normalizeCategories(remoteData);
         saveCategoriesLocally(createPersistableCategories(categories));
+        if (!hasSyncedOnce) {
+          try {
+            localStorage.setItem(firebaseSyncedOnceKey, "true");
+          } catch (e) {
+            console.warn("Could not set sync flag in localStorage", e);
+          }
+        }
         rebuildMap();
         updateSyncStatus("Firebase");
-      } else if (persistedCategories) {
-        // If Firebase is empty but we have local data, push it to Firebase.
-        void persistCategories({ syncRemote: true });
-      } else {
-        // If both Firebase and local storage are empty, load from the default file.
-        fetch(fileName)
-          .then((res) => res.json())
-          .then(async (defaultData) => {
-            categories = normalizeCategories(defaultData);
-            await persistCategories({ syncRemote: true });
-            rebuildMap();
-          })
-          .catch((err) => console.error("Failed to load and persist default data:", err));
+      } else if (!hasSyncedOnce) {
+        // Remote is empty, and we've never synced. This is a seeding scenario.
+        if (persistedCategories) {
+          // We have local data, so push it to seed the database.
+          void persistCategories({ syncRemote: true });
+        } else {
+          // We have no local data, so seed from the default file.
+          fetch(fileName)
+            .then((res) => res.json())
+            .then(async (defaultData) => {
+              categories = normalizeCategories(defaultData);
+              await persistCategories({ syncRemote: true });
+              rebuildMap();
+            })
+            .catch((err) => console.error("Failed to load and persist default data:", err));
+        }
       }
+      // If remote is empty but hasSyncedOnce is true, we do nothing.
+      // This prevents a client from overwriting the database on a temporary
+      // connection issue. We trust that a subsequent 'value' event will arrive.
     }, (error) => {
       console.error("Firebase listener error:", error);
       updateSyncStatus("local - cloud failed");
@@ -814,6 +835,15 @@ function showSidePopup(location) {
     ? `<p style="margin-top: 5px; font-style: italic;">${escapeHtml(location.info)}</p>`
     : "";
 
+  const getFriendlyUserId = (uid) => {
+    if (!uid || typeof uid !== "string") return "";
+    return `User...${uid.slice(-6)}`;
+  };
+
+  const lastUpdatedByText = location.lastUpdatedBy
+    ? `<div class="location-metadata">Last updated by: <span class="user-id" title="${escapeHtml(location.lastUpdatedBy)}">${escapeHtml(getFriendlyUserId(location.lastUpdatedBy))}</span></div>`
+    : "";
+
   const relatedItemsText =
     location.relatedItems && Array.isArray(location.relatedItems) && location.relatedItems.length > 0
       ? `<div style="margin-top: 15px; padding-top: 10px; border-top: 1px solid rgba(255,255,255,0.2);">
@@ -831,6 +861,7 @@ function showSidePopup(location) {
       <h1>${escapeHtml(location.name)}</h1>
       ${infoText}
       ${renderLocationGallery(location)}
+      ${lastUpdatedByText}
       ${quickGuideText}
       ${relatedItemsText}
       <div style="margin-top: 16px; display: flex; gap: 8px; flex-wrap: wrap;">
@@ -1164,6 +1195,7 @@ function createMarkerWithPopup(latlng) {
           }
 
           const locationId = `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
+          const currentUser = firebaseAuth?.currentUser;
 
           const locationData = normalizeLocation(
             {
@@ -1178,6 +1210,7 @@ function createMarkerWithPopup(latlng) {
               guide: guideSteps.length
                 ? { title: guideTitle, steps: guideSteps }
                 : null,
+              lastUpdatedBy: currentUser?.uid || null,
             },
             categoryName,
             categories[categoryName].locations.length

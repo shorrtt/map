@@ -594,6 +594,18 @@ textarea.popup-input {
   box-shadow: 0 16px 34px rgba(75, 85, 99, 0.5);
 }
 
+.location-detail-card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.location-detail-card h1 {
+  margin: 0;
+  font-size: 18px;
+  line-height: 1.2;
+}
+
 .delete-location-button {
   background: linear-gradient(135deg, #ef4444, #dc2626);
   box-shadow: 0 10px 22px rgba(239, 68, 68, 0.28);

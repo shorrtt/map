@@ -867,13 +867,15 @@ function showSidePopup(location) {
   const quickGuideText = renderQuickGuide(location);
 
   const content = `
-    <h1>${escapeHtml(location.name)}</h1>
-    ${infoText}
-    ${renderLocationGallery(location)}
-    ${quickGuideText}
-    ${relatedItemsText}
-    <div style="margin-top: 16px; display: flex; gap: 8px;">
-      <button type="button" id="delete-location-button" class="popup-button delete-location-button">Delete Location</button>
+    <div class="location-detail-card">
+      <h1>${escapeHtml(location.name)}</h1>
+      ${infoText}
+      ${renderLocationGallery(location)}
+      ${quickGuideText}
+      ${relatedItemsText}
+      <div style="margin-top: 16px; display: flex; gap: 8px; flex-wrap: wrap;">
+        <button type="button" id="delete-location-button" class="popup-button delete-location-button">Delete Location</button>
+      </div>
     </div>
   `;
 

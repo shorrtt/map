@@ -29,6 +29,12 @@ let createMarkerMode = false;
 // Simple in-memory image memo cache (Promise-based)
 const imageLoadCache = new Map();
 const localStorageKey = "echo-map-data-v1";
+const firebaseDataPath = "echo-map-data";
+let firebaseDb = null;
+let firebaseAuth = null;
+let firebaseSyncReady = false;
+let firebaseSyncEnabled = false;
+let firebaseSyncPromise = null;
 
 function escapeHtml(value) {
   return String(value ?? "")
@@ -132,6 +138,62 @@ function getCategoryColor(categoryName) {
   return palette[index];
 }
 
+function updateSyncStatus(message) {
+  const syncLabel = document.getElementById("sync-status");
+  if (syncLabel) {
+    syncLabel.textContent = `Sync: ${message}`;
+  }
+}
+
+function isFirebaseConfigured() {
+  const config = window.FIREBASE_CONFIG;
+  return !!config && typeof config === "object" && config.projectId && !String(config.projectId).includes("YOUR_") && config.apiKey && !String(config.apiKey).includes("YOUR_");
+}
+
+function initializeFirebase() {
+  if (!isFirebaseConfigured()) {
+    firebaseSyncReady = false;
+    firebaseSyncEnabled = false;
+    updateSyncStatus("local");
+    return Promise.resolve(false);
+  }
+
+  if (firebaseSyncPromise) return firebaseSyncPromise;
+
+  firebaseSyncPromise = new Promise((resolve) => {
+    try {
+      if (!window.firebase?.apps?.length) {
+        window.firebase.initializeApp(window.FIREBASE_CONFIG);
+      }
+      firebaseAuth = window.firebase.auth();
+      firebaseDb = window.firebase.database();
+      firebaseAuth
+        .signInAnonymously()
+        .then(() => {
+          firebaseSyncReady = true;
+          firebaseSyncEnabled = true;
+          updateSyncStatus("Firebase");
+          resolve(true);
+        })
+        .catch((error) => {
+          console.warn("Firebase auth unavailable, using local persistence:", error);
+          firebaseSyncReady = false;
+          firebaseSyncEnabled = false;
+          updateSyncStatus("local");
+          resolve(false);
+        });
+    } catch (error) {
+      console.warn("Firebase initialization failed, using local persistence:", error);
+      firebaseSyncReady = false;
+      firebaseSyncEnabled = false;
+      updateSyncStatus("local");
+      resolve(false);
+    }
+  });
+
+  return firebaseSyncPromise;
+}
+
 function persistCategories() {
   try {
     localStorage.setItem(localStorageKey, JSON.stringify(categories));
@@ -141,7 +203,34 @@ function persistCategories() {
       window.history.replaceState({}, "", `${window.location.pathname}${nextHash}`);
     }
   } catch (error) {
-    console.warn("Could not persist map data:", error);
+    console.warn("Could not persist map data locally:", error);
+  }
+
+  if (firebaseSyncEnabled && firebaseDb) {
+    firebaseDb
+      .ref(firebaseDataPath)
+      .set(categories)
+      .then(() => updateSyncStatus("Firebase"))
+      .catch((error) => {
+        console.warn("Could not sync map data to Firebase:", error);
+        updateSyncStatus("local fallback");
+      });
+  }
+}
+
+async function loadRemoteCategories() {
+  if (!firebaseSyncEnabled || !firebaseDb) return null;
+
+  try {
+    const snapshot = await firebaseDb.ref(firebaseDataPath).once("value");
+    const value = snapshot.val();
+    if (value && typeof value === "object") {
+      return normalizeCategories(value);
+    }
+    return null;
+  } catch (error) {
+    console.warn("Could not load map data from Firebase:", error);
+    return null;
   }
 }
 
@@ -299,6 +388,7 @@ function loadData(fileName) {
   if (sharedCategories) {
     categories = sharedCategories;
     rebuildMap();
+    void initializeFirebase().then(() => persistCategories());
     return;
   }
 
@@ -306,22 +396,55 @@ function loadData(fileName) {
   if (persistedCategories) {
     categories = persistedCategories;
     rebuildMap();
-    return;
   }
 
-  fetch(fileName)
-    .then((response) => {
-      if (!response.ok) throw new Error("Network response was not ok");
-      return response.json();
-    })
-    .then((data) => {
-      categories = normalizeCategories(data);
-      persistCategories();
+  initializeFirebase().then(async (enabled) => {
+    if (!enabled) {
+      if (!persistedCategories) {
+        fetch(fileName)
+          .then((response) => {
+            if (!response.ok) throw new Error("Network response was not ok");
+            return response.json();
+          })
+          .then((data) => {
+            categories = normalizeCategories(data);
+            persistCategories();
+            rebuildMap();
+          })
+          .catch((error) => {
+            console.error("Error loading JSON file:", error);
+          });
+      }
+      return;
+    }
+
+    const remoteCategories = await loadRemoteCategories();
+    if (remoteCategories) {
+      categories = remoteCategories;
       rebuildMap();
-    })
-    .catch((error) => {
-      console.error("Error loading JSON file:", error);
-    });
+      persistCategories();
+      updateSyncStatus("Firebase");
+      return;
+    }
+
+    if (!persistedCategories) {
+      fetch(fileName)
+        .then((response) => {
+          if (!response.ok) throw new Error("Network response was not ok");
+          return response.json();
+        })
+        .then((data) => {
+          categories = normalizeCategories(data);
+          persistCategories();
+          rebuildMap();
+        })
+        .catch((error) => {
+          console.error("Error loading JSON file:", error);
+        });
+    } else {
+      rebuildMap();
+    }
+  });
 }
 
 /**

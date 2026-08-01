@@ -1,0 +1,52 @@
+[debug] [2026-08-01T19:58:45.226Z] ----------------------------------------------------------------------
+[debug] [2026-08-01T19:58:45.229Z] Command:       C:\Program Files\nodejs\node.exe C:\Users\jayli\AppData\Roaming\npm\node_modules\firebase-tools\lib\bin\firebase.js init
+[debug] [2026-08-01T19:58:45.229Z] CLI Version:   15.25.1
+[debug] [2026-08-01T19:58:45.229Z] Platform:      win32
+[debug] [2026-08-01T19:58:45.229Z] Node Version:  v24.13.0
+[debug] [2026-08-01T19:58:45.229Z] Detected Agent: unknown
+[debug] [2026-08-01T19:58:45.229Z] Time:          Sat Aug 01 2026 15:58:45 GMT-0400 (Eastern Daylight Time)
+[debug] [2026-08-01T19:58:45.229Z] ----------------------------------------------------------------------
+[debug] 
+[info] 
+     ######## #### ########  ######## ########     ###     ######  ########
+     ##        ##  ##     ## ##       ##     ##  ##   ##  ##       ##
+     ######    ##  ########  ######   ########  #########  ######  ######
+     ##        ##  ##    ##  ##       ##     ## ##     ##       ## ##
+     ##       #### ##     ## ######## ########  ##     ##  ######  ########
+
+You're about to initialize a Firebase project in this directory:
+
+  C:\Users\jayli\Desktop\[characters]\map
+
+[info] 
+=== Project Setup
+[info] 
+[info] First, let's associate this project directory with a Firebase project.
+[info] You can create multiple project aliases by running firebase use --add, 
+[info] 
+[debug] [2026-08-01T19:59:49.521Z] > command requires scopes: ["email","openid","https://www.googleapis.com/auth/cloudplatformprojects.readonly","https://www.googleapis.com/auth/firebase","https://www.googleapis.com/auth/cloud-platform"]
+[debug] [2026-08-01T19:59:49.521Z] > authorizing via signed-in user (shorrttx@gmail.com)
+[debug] [2026-08-01T19:59:49.530Z] Checked if tokens are valid: true, expires at: 1785617912815
+[debug] [2026-08-01T19:59:49.530Z] Checked if tokens are valid: true, expires at: 1785617912815
+[debug] [2026-08-01T19:59:49.531Z] >>> [apiv2][query] GET https://firebase.googleapis.com/v1beta1/projects pageSize=100
+[debug] [2026-08-01T19:59:49.944Z] <<< [apiv2][status] GET https://firebase.googleapis.com/v1beta1/projects 200
+[debug] [2026-08-01T19:59:49.944Z] <<< [apiv2][body] GET https://firebase.googleapis.com/v1beta1/projects [omitted]
+[info] 
+=== Database Setup
+[info] 
+[info] Firebase Realtime Database Security Rules allow you to define how your data should be
+[info] structured and when your data can be read from and written to.
+[info] 
+[debug] [2026-08-01T19:59:57.106Z] ExitPromptError: User force closed the prompt with SIGINT
+    at Interface.sigint (C:\Users\jayli\AppData\Roaming\npm\node_modules\firebase-tools\node_modules\@inquirer\core\dist\commonjs\lib\create-prompt.js:101:37)
+    at Interface.emit (node:events:508:28)
+    at [_ttyWrite] [as _ttyWrite] (node:internal/readline/interface:1327:18)
+    at ReadStream.onkeypress (node:internal/readline/interface:284:20)
+    at ReadStream.emit (node:events:520:35)
+    at emitKeys (node:internal/readline/utils:371:14)
+    at emitKeys.next (<anonymous>)
+    at ReadStream.onData (node:internal/readline/emitKeypressEvents:64:36)
+    at ReadStream.emit (node:events:508:28)
+    at addChunk (node:internal/streams/readable:559:12)
+[error] 
+[error] Error: An unexpected error has occurred.

@@ -48,6 +48,20 @@
     <!-- Leaflet JS -->
     <script src="https://unpkg.com/leaflet@1.7.1/dist/leaflet.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@iconify/iconify@latest/dist/iconify.min.js"></script>
+    <script>
+      window.FIREBASE_CONFIG = window.FIREBASE_CONFIG || {
+        apiKey: "AIzaSyD0k8rfbjb4TKRR_Ck6l-oQiETjDXdfgb4",
+        authDomain: "echo-map-data.firebaseapp.com",
+        databaseURL: "https://echo-map-data-default-rtdb.firebaseio.com",
+        projectId: "echo-map-data",
+        storageBucket: "echo-map-data.firebasestorage.app",
+        messagingSenderId: "679408404813",
+        appId: "1:679408404813:web:a3a2049cf6599a68960f04"
+      };
+    </script>
+    <script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-database-compat.js"></script>
   </head>
   <body>
     <div class="app-overlay">
@@ -56,6 +70,7 @@
           <div>
             <div class="app-title">EchoRP Crime Map</div>
             <div class="app-subtitle">Interactive locations &amp; markers</div>
+            <div id="sync-status" class="sync-status">Sync: local</div>
           </div>
         </div>
         <div class="app-header-right">

@@ -1,13 +1,14 @@
 // Bump this whenever the app shell changes so deployed clients discard stale files.
-const CACHE_NAME = "map-shell-v2";
+const CACHE_NAME = "map-shell-v3";
 const urlsToCache = [
   new URL("./", self.registration.scope).href,
   new URL("./index.html", self.registration.scope).href,
-  new URL("./style.css", self.registration.scope).href,
-  new URL("./map.js", self.registration.scope).href,
+  new URL("./style.css?v=20260801", self.registration.scope).href,
+  new URL("./map.js?v=20260801", self.registration.scope).href,
 ];
 
 self.addEventListener("install", (event) => {
+  self.skipWaiting();
   event.waitUntil(
     caches.open(CACHE_NAME).then((cache) => {
       return cache.addAll(urlsToCache);
@@ -50,6 +51,7 @@ self.addEventListener("fetch", (event) => {
 });
 
 self.addEventListener("activate", (event) => {
+  self.clients.claim();
   const cacheWhitelist = [CACHE_NAME];
   event.waitUntil(
     caches.keys().then((cacheNames) => {

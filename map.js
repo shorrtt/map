@@ -588,65 +588,55 @@ function loadData(fileName) {
     rebuildMap();
   }
 
-  initializeFirebase().then(async (enabled) => {
+  initializeFirebase().then((enabled) => {
     if (!enabled) {
-      if (!persistedCategories) {
-        fetch(fileName)
-          .then((response) => {
-            if (!response.ok) throw new Error("Network response was not ok");
-            return response.json();
-          })
-          .then((data) => {
-            categories = normalizeCategories(data);
-            void persistCategories({ syncRemote: false });
-            rebuildMap();
-          })
-          .catch((error) => {
-            console.error("Error loading JSON file:", error);
-          });
-      }
-      return;
-    }
-
-    // If local data exists, sync it to the remote source first. This ensures
-    // that any changes made while offline (like deletions) are pushed to
-    // Firebase before we fetch, preventing local changes from being overwritten.
-    // Note: This still has a race condition if two clients sync at the same
-    // time, as the last one to write will overwrite other's changes.
-    if (persistedCategories) {
-      await persistCategories({ syncRemote: true });
-    }
-
-    const remoteCategories = await loadRemoteCategories();
-    if (remoteCategories !== null && remoteCategories !== undefined) {
-      // Now that local changes have been pushed, the remote data is the definitive source of truth.
-      categories = normalizeCategories(remoteCategories);
-      // Save this authoritative state back to local storage.
-      saveCategoriesLocally(createPersistableCategories(categories));
-      rebuildMap();
-      updateSyncStatus("Firebase");
-      return;
-    }
-
-    if (!persistedCategories) {
+      // Firebase is not configured or failed to initialize.
+      // If we don't have any local data, load the default file.
+      if (persistedCategories) return;
       fetch(fileName)
         .then((response) => {
           if (!response.ok) throw new Error("Network response was not ok");
           return response.json();
         })
-        .then(async (data) => {
+        .then((data) => {
           categories = normalizeCategories(data);
-          await persistCategories();
+          void persistCategories({ syncRemote: false });
           rebuildMap();
         })
         .catch((error) => {
           console.error("Error loading JSON file:", error);
         });
-    } else {
-      // Remote is empty, but we have local data which we've already
-      // attempted to sync. Just rebuild the map from local state.
-      rebuildMap();
+      return;
     }
+
+    // Firebase is enabled. Set up a real-time listener for data changes.
+    const dbRef = firebaseDb.ref(firebaseDataPath);
+    dbRef.on("value", (snapshot) => {
+      const remoteData = snapshot.val();
+      if (remoteData && typeof remoteData === "object" && Object.keys(remoteData).length > 0) {
+        // If Firebase has data, it is the source of truth.
+        categories = normalizeCategories(remoteData);
+        saveCategoriesLocally(createPersistableCategories(categories));
+        rebuildMap();
+        updateSyncStatus("Firebase");
+      } else if (persistedCategories) {
+        // If Firebase is empty but we have local data, push it to Firebase.
+        void persistCategories({ syncRemote: true });
+      } else {
+        // If both Firebase and local storage are empty, load from the default file.
+        fetch(fileName)
+          .then((res) => res.json())
+          .then(async (defaultData) => {
+            categories = normalizeCategories(defaultData);
+            await persistCategories({ syncRemote: true });
+            rebuildMap();
+          })
+          .catch((err) => console.error("Failed to load and persist default data:", err));
+      }
+    }, (error) => {
+      console.error("Firebase listener error:", error);
+      updateSyncStatus("local - cloud failed");
+    });
   });
 }
 

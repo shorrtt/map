@@ -294,9 +294,9 @@ function buildCategoryIcons(categoriesByName) {
     categoryIcons[category] = L.divIcon({
       className: "custom-div-icon",
       html: getPinHTML(color, iconName),
-      iconSize: [40, 44],
-      iconAnchor: [20, 44],
-      popupAnchor: [0, -38],
+      iconSize: [44, 48],
+      iconAnchor: [22, 48],
+      popupAnchor: [0, -42],
     });
   }
   return categoryIcons;

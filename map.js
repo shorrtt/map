@@ -608,10 +608,21 @@ function loadData(fileName) {
       return;
     }
 
+    // If local data exists, sync it to the remote source first. This ensures
+    // that any changes made while offline (like deletions) are pushed to
+    // Firebase before we fetch, preventing local changes from being overwritten.
+    // Note: This still has a race condition if two clients sync at the same
+    // time, as the last one to write will overwrite other's changes.
+    if (persistedCategories) {
+      await persistCategories({ syncRemote: true });
+    }
+
     const remoteCategories = await loadRemoteCategories();
     if (remoteCategories !== null && remoteCategories !== undefined) {
+      // Now that local changes have been pushed, the remote data is the definitive source of truth.
       categories = normalizeCategories(remoteCategories);
-      await persistCategories({ syncRemote: true });
+      // Save this authoritative state back to local storage.
+      saveCategoriesLocally(createPersistableCategories(categories));
       rebuildMap();
       updateSyncStatus("Firebase");
       return;
@@ -632,7 +643,8 @@ function loadData(fileName) {
           console.error("Error loading JSON file:", error);
         });
     } else {
-      await persistCategories();
+      // Remote is empty, but we have local data which we've already
+      // attempted to sync. Just rebuild the map from local state.
       rebuildMap();
     }
   });

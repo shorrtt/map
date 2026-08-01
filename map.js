@@ -35,6 +35,8 @@ let firebaseAuth = null;
 let firebaseSyncReady = false;
 let firebaseSyncEnabled = false;
 let firebaseSyncPromise = null;
+let firebaseWriteQueue = Promise.resolve();
+const firebaseInvalidKeyPattern = /[.#$[\]/\u0000-\u001F\u007F]/;
 
 function escapeHtml(value) {
   return String(value ?? "")
@@ -132,6 +134,123 @@ function normalizeCategories(rawCategories) {
   return normalized;
 }
 
+function isValidFirebaseKey(value) {
+  return !!value && !firebaseInvalidKeyPattern.test(value);
+}
+
+function createPersistableLocation(rawLocation, categoryName, index) {
+  const images = normalizeImages(rawLocation)
+    .map((image) => image.slice(0, 2048))
+    .slice(0, 20);
+  const relatedItems = Array.isArray(rawLocation?.relatedItems)
+    ? rawLocation.relatedItems
+        .map((item) => String(item ?? "").trim())
+        .filter(Boolean)
+        .map((item) => item.slice(0, 500))
+        .slice(0, 100)
+    : [];
+  const guide = normalizeGuide(rawLocation?.guide);
+  const lat = rawLocation?.lat != null ? String(rawLocation.lat).slice(0, 32) : "";
+  const lng = rawLocation?.lng != null ? String(rawLocation.lng).slice(0, 32) : "";
+  const rawId = rawLocation?.id ?? `${categoryName}-${index}-${lat}-${lng}`;
+  const location = {
+    id: typeof rawId === "number" ? rawId : String(rawId).slice(0, 160),
+    lat,
+    lng,
+    name: String(rawLocation?.name || `${categoryName} ${index + 1}`).trim().slice(0, 120),
+    img: images[0] || "",
+    images,
+    info: String(rawLocation?.info || "").trim().slice(0, 1000),
+    relatedItems,
+  };
+
+  if (guide?.steps?.length) {
+    location.guide = {
+      title: String(guide.title || "Quick Guide").trim().slice(0, 120),
+      steps: guide.steps
+        .map((step) => String(step).trim().slice(0, 1000))
+        .filter(Boolean)
+        .slice(0, 50),
+    };
+  }
+
+  return location;
+}
+
+/**
+ * Return only database-safe map data. Runtime Leaflet markers are deliberately
+ * excluded so serialization and Firebase writes cannot traverse DOM/map state.
+ */
+function createPersistableCategories(sourceCategories = categories) {
+  const payload = {};
+
+  for (const [rawCategoryName, categoryData] of Object.entries(sourceCategories || {})) {
+    if (!categoryData || typeof categoryData !== "object") continue;
+
+    const categoryName = String(rawCategoryName).trim();
+    if (!categoryName) continue;
+
+    const persistentCategory = {
+      color: String(categoryData.color || getCategoryColor(categoryName)).slice(0, 32),
+      locations: Array.isArray(categoryData.locations)
+        ? categoryData.locations.map((location, index) =>
+            createPersistableLocation(location, categoryName, index)
+          )
+        : [],
+    };
+    const icon = categoryData.icon || categoryData.iconName || categoryData.iconify;
+    if (icon) persistentCategory.icon = String(icon).trim().slice(0, 120);
+
+    payload[categoryName] = persistentCategory;
+  }
+
+  return payload;
+}
+
+function getLocationIdentity(location) {
+  if (location?.id != null && String(location.id).trim()) {
+    return `id:${String(location.id)}`;
+  }
+  return `location:${location?.lat}|${location?.lng}|${location?.name}`;
+}
+
+/**
+ * Merge incoming locations into the current database value without deleting
+ * locations saved by another client. Existing records win on ID collisions.
+ */
+function mergePersistedCategories(currentValue, incomingValue) {
+  const merged = createPersistableCategories(currentValue || {});
+  const incoming = createPersistableCategories(incomingValue || {});
+
+  for (const [categoryName, incomingCategory] of Object.entries(incoming)) {
+    const existingCategory = merged[categoryName];
+    if (!existingCategory) {
+      merged[categoryName] = incomingCategory;
+      continue;
+    }
+
+    const knownLocations = new Set(
+      existingCategory.locations.map((location) => getLocationIdentity(location))
+    );
+    for (const location of incomingCategory.locations) {
+      const identity = getLocationIdentity(location);
+      if (!knownLocations.has(identity)) {
+        existingCategory.locations.push(location);
+        knownLocations.add(identity);
+      }
+    }
+
+    if (!existingCategory.color && incomingCategory.color) {
+      existingCategory.color = incomingCategory.color;
+    }
+    if (incomingCategory.icon) {
+      existingCategory.icon = incomingCategory.icon;
+    }
+  }
+
+  return merged;
+}
+
 function getCategoryColor(categoryName) {
   const palette = ["#60a5fa", "#34d399", "#f59e0b", "#a78bfa", "#f472b6", "#fb923c"];
   const index = Math.abs(categoryName.split("").reduce((sum, char) => sum + char.charCodeAt(0), 0)) % palette.length;
@@ -194,27 +313,80 @@ function initializeFirebase() {
   return firebaseSyncPromise;
 }
 
-function persistCategories() {
+function saveCategoriesLocally(payload) {
   try {
-    localStorage.setItem(localStorageKey, JSON.stringify(categories));
-    const encoded = encodeURIComponent(JSON.stringify(categories));
-    const nextHash = `#data=${encoded}`;
-    if (window.location.hash !== nextHash) {
-      window.history.replaceState({}, "", `${window.location.pathname}${nextHash}`);
-    }
+    localStorage.setItem(localStorageKey, JSON.stringify(payload));
+    return { saved: true, error: null };
   } catch (error) {
     console.warn("Could not persist map data locally:", error);
+    return { saved: false, error };
+  }
+}
+
+async function persistCategories({ syncRemote = true } = {}) {
+  const payload = createPersistableCategories(categories);
+  const localResult = saveCategoriesLocally(payload);
+
+  if (!syncRemote || !firebaseSyncEnabled || !firebaseDb) {
+    if (localResult.saved && !firebaseSyncEnabled) updateSyncStatus("local");
+    return {
+      localSaved: localResult.saved,
+      remoteSaved: false,
+      remoteAttempted: false,
+      error: localResult.error,
+    };
   }
 
-  if (firebaseSyncEnabled && firebaseDb) {
-    firebaseDb
-      .ref(firebaseDataPath)
-      .set(categories)
-      .then(() => updateSyncStatus("Firebase"))
-      .catch((error) => {
-        console.warn("Could not sync map data to Firebase:", error);
-        updateSyncStatus("local fallback");
-      });
+  const invalidCategory = Object.keys(payload).find(
+    (categoryName) => categoryName.length > 80 || !isValidFirebaseKey(categoryName)
+  );
+  if (invalidCategory) {
+    const error = new Error(
+      `Category "${invalidCategory}" contains a character Firebase cannot store.`
+    );
+    console.warn(error.message);
+    updateSyncStatus("local - invalid category name");
+    return {
+      localSaved: localResult.saved,
+      remoteSaved: false,
+      remoteAttempted: true,
+      error,
+    };
+  }
+
+  updateSyncStatus("saving...");
+
+  const writeOperation = async () => {
+    const result = await firebaseDb.ref(firebaseDataPath).transaction(
+      (currentValue) => mergePersistedCategories(currentValue, payload),
+      undefined,
+      false
+    );
+    if (!result.committed) {
+      throw new Error("Firebase cancelled the save transaction.");
+    }
+  };
+
+  firebaseWriteQueue = firebaseWriteQueue.catch(() => {}).then(writeOperation);
+
+  try {
+    await firebaseWriteQueue;
+    updateSyncStatus("Firebase");
+    return {
+      localSaved: localResult.saved,
+      remoteSaved: true,
+      remoteAttempted: true,
+      error: localResult.error,
+    };
+  } catch (error) {
+    console.warn("Could not sync map data to Firebase:", error);
+    updateSyncStatus(localResult.saved ? "local - cloud failed" : "save failed");
+    return {
+      localSaved: localResult.saved,
+      remoteSaved: false,
+      remoteAttempted: true,
+      error,
+    };
   }
 }
 
@@ -387,8 +559,9 @@ function loadData(fileName) {
   const sharedCategories = loadSharedCategoriesFromHash();
   if (sharedCategories) {
     categories = sharedCategories;
+    void persistCategories({ syncRemote: false });
     rebuildMap();
-    void initializeFirebase().then(() => persistCategories());
+    void initializeFirebase();
     return;
   }
 
@@ -408,7 +581,7 @@ function loadData(fileName) {
           })
           .then((data) => {
             categories = normalizeCategories(data);
-            persistCategories();
+            void persistCategories({ syncRemote: false });
             rebuildMap();
           })
           .catch((error) => {
@@ -420,9 +593,13 @@ function loadData(fileName) {
 
     const remoteCategories = await loadRemoteCategories();
     if (remoteCategories) {
-      categories = remoteCategories;
+      categories = normalizeCategories(
+        persistedCategories
+          ? mergePersistedCategories(remoteCategories, persistedCategories)
+          : remoteCategories
+      );
+      await persistCategories({ syncRemote: !!persistedCategories });
       rebuildMap();
-      persistCategories();
       updateSyncStatus("Firebase");
       return;
     }
@@ -433,15 +610,16 @@ function loadData(fileName) {
           if (!response.ok) throw new Error("Network response was not ok");
           return response.json();
         })
-        .then((data) => {
+        .then(async (data) => {
           categories = normalizeCategories(data);
-          persistCategories();
+          await persistCategories();
           rebuildMap();
         })
         .catch((error) => {
           console.error("Error loading JSON file:", error);
         });
     } else {
+      await persistCategories();
       rebuildMap();
     }
   });
@@ -482,9 +660,16 @@ function renderCategoriesAndMarkers(categoryIcons) {
     const categoryImageUrls = [];
 
     categoryData.locations.forEach((location) => {
+      const latitude = Number.parseFloat(location.lat);
+      const longitude = Number.parseFloat(location.lng);
+      if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) {
+        console.warn(`Skipping location with invalid coordinates: ${location.name}`);
+        return;
+      }
+
       const icon = categoryIcons[category];
       const marker = L.marker(
-        [parseFloat(location.lat), parseFloat(location.lng)],
+        [latitude, longitude],
         { icon: icon, title: location.name }
       ).addTo(markersGroup);
       location.marker = marker;
@@ -740,14 +925,13 @@ function createMarkerWithPopup(latlng) {
   marker._saved = false;
 
   const categoryNames = Object.keys(categories).sort();
-  const categoryOptions = categoryNames.length
-    ? categoryNames
-        .map(
-          (categoryName) =>
-            `<option value="${escapeHtml(categoryName)}">${escapeHtml(categoryName)}</option>`
-        )
-        .join("")
-    : "<option value=\"\">Create new category</option>";
+  const categoryOptions = categoryNames
+    .map(
+      (categoryName) =>
+        `<option value="${escapeHtml(categoryName)}">${escapeHtml(categoryName)}</option>`
+    )
+    .join("");
+  const createCategoryLabel = categoryNames.length ? "+ New category" : "Create a category";
 
   const popupContent = `
     <div class="create-location-form">
@@ -758,16 +942,16 @@ function createMarkerWithPopup(latlng) {
         <span class="category-select-mark" aria-hidden="true">◆</span>
         <select id="marker-category-select" class="popup-input">
           ${categoryOptions}
-          <option value="__new__">+ New category</option>
+          <option value="__new__">${createCategoryLabel}</option>
         </select>
       </div>
-      <input id="marker-category-custom" type="text" class="popup-input" placeholder="New category name" />
+      <input id="marker-category-custom" type="text" class="popup-input" maxlength="80" placeholder="New category name" />
 
       <label class="create-location-label" for="marker-name">Location name <span>*</span></label>
-      <input id="marker-name" type="text" class="popup-input" placeholder="e.g. Meth Lab 1" />
+      <input id="marker-name" type="text" class="popup-input" maxlength="120" placeholder="e.g. Meth Lab 1" />
 
       <label class="create-location-label" for="marker-category-icon">Category icon</label>
-      <input id="marker-category-icon" type="text" class="popup-input" placeholder="mdi:map-marker or heroicons:home" />
+      <input id="marker-category-icon" type="text" class="popup-input" maxlength="120" placeholder="mdi:map-marker or heroicons:home" />
       <small class="create-location-help">Use an Iconify icon name, such as <code>mdi:map-marker</code>.</small>
 
       <div class="create-location-section">
@@ -782,10 +966,10 @@ function createMarkerWithPopup(latlng) {
       </div>
 
       <label class="create-location-label" for="marker-info">Info</label>
-      <input id="marker-info" type="text" class="popup-input" placeholder="e.g. Requires 5 thermite" />
+      <input id="marker-info" type="text" class="popup-input" maxlength="1000" placeholder="e.g. Requires 5 thermite" />
 
       <label class="create-location-label" for="marker-guide-title">Quick guide title</label>
-      <input id="marker-guide-title" type="text" class="popup-input" placeholder="Quick Guide" />
+      <input id="marker-guide-title" type="text" class="popup-input" maxlength="120" placeholder="Quick Guide" />
 
       <label class="create-location-label" for="marker-guide-steps">Quick guide steps</label>
       <textarea id="marker-guide-steps" class="popup-input" rows="3" placeholder="One step per line"></textarea>
@@ -803,6 +987,7 @@ function createMarkerWithPopup(latlng) {
       </div>
 
       <button id="save-marker" class="popup-button save-location-button" type="button">Save Location</button>
+      <div id="marker-save-status" class="marker-save-status" role="status" aria-live="polite"></div>
     </div>
   `;
   marker.bindPopup(popupContent);
@@ -810,22 +995,36 @@ function createMarkerWithPopup(latlng) {
 
   marker.on("popupopen", () => {
     setTimeout(() => {
-      const addItemBtn = document.getElementById("add-related-item");
-      const addImageBtn = document.getElementById("add-image-url");
-      const relatedItemsContainer = document.getElementById("related-items-container");
-      const imageUrlsContainer = document.getElementById("image-urls-container");
-      const categorySelect = document.getElementById("marker-category-select");
-      const categoryCustom = document.getElementById("marker-category-custom");
-      const saveButton = document.getElementById("save-marker");
+      const form = marker.getPopup()?.getElement()?.querySelector(".create-location-form");
+      if (!form) return;
 
-      const setupRemoveButtons = () => {
-        const removeButtons = document.querySelectorAll(".remove-related-item");
-        removeButtons.forEach((btn) => {
-          btn.onclick = (event) => {
-            event.target.closest(".related-item-input").remove();
-          };
-        });
+      const addItemBtn = form.querySelector("#add-related-item");
+      const addImageBtn = form.querySelector("#add-image-url");
+      const relatedItemsContainer = form.querySelector("#related-items-container");
+      const imageUrlsContainer = form.querySelector("#image-urls-container");
+      const categorySelect = form.querySelector("#marker-category-select");
+      const categoryCustom = form.querySelector("#marker-category-custom");
+      const saveButton = form.querySelector("#save-marker");
+      const saveStatus = form.querySelector("#marker-save-status");
+
+      const setSaveStatus = (message, type = "") => {
+        if (!saveStatus) return;
+        saveStatus.textContent = message;
+        saveStatus.className = `marker-save-status${type ? ` ${type}` : ""}`;
       };
+
+      form.addEventListener("click", (event) => {
+        const removeItemButton = event.target.closest(".remove-related-item");
+        if (removeItemButton) {
+          removeItemButton.closest(".related-item-input")?.remove();
+          return;
+        }
+
+        const removeImageButton = event.target.closest(".remove-image-url");
+        if (removeImageButton) {
+          removeImageButton.closest(".image-url-row")?.remove();
+        }
+      });
 
       if (addItemBtn && relatedItemsContainer) {
         addItemBtn.addEventListener("click", () => {
@@ -836,7 +1035,6 @@ function createMarkerWithPopup(latlng) {
             <button class="remove-related-item remove-location-row" type="button" aria-label="Remove item">&times;</button>
           `;
           relatedItemsContainer.appendChild(newItemDiv);
-          setupRemoveButtons();
         });
       }
 
@@ -849,34 +1047,57 @@ function createMarkerWithPopup(latlng) {
             <button class="remove-image-url remove-location-row" type="button" aria-label="Remove image">&times;</button>
           `;
           imageUrlsContainer.appendChild(newImageRow);
-
-          newImageRow.querySelector(".remove-image-url")?.addEventListener("click", () => {
-            newImageRow.remove();
-          });
         });
       }
 
       if (categorySelect && categoryCustom) {
-        categorySelect.addEventListener("change", () => {
+        const syncCustomCategoryVisibility = () => {
           categoryCustom.style.display = categorySelect.value === "__new__" ? "block" : "none";
-        });
+        };
+        categorySelect.addEventListener("change", syncCustomCategoryVisibility);
+        syncCustomCategoryVisibility();
       }
 
-      setupRemoveButtons();
-
       if (saveButton) {
-        saveButton.addEventListener("click", () => {
-          const name = document.getElementById("marker-name")?.value.trim();
+        saveButton.addEventListener("click", async () => {
+          if (saveButton.disabled) return;
+
+          const nameInput = form.querySelector("#marker-name");
+          const name = nameInput?.value.trim();
           if (!name) {
-            alert("Please enter a location name.");
+            setSaveStatus("Enter a location name before saving.", "error");
+            nameInput?.focus();
+            return;
+          }
+          if (name.length > 120) {
+            setSaveStatus("Location names must be 120 characters or fewer.", "error");
+            nameInput?.focus();
             return;
           }
 
           const categoryValue = categorySelect?.value === "__new__"
             ? categoryCustom?.value.trim()
             : categorySelect?.value.trim();
-          const categoryName = categoryValue || "New Category";
-          const categoryIcon = document.getElementById("marker-category-icon")?.value.trim() || null;
+          const categoryName = categoryValue || "";
+          if (!categoryName) {
+            setSaveStatus("Choose a category or enter a new category name.", "error");
+            categoryCustom?.focus();
+            return;
+          }
+          if (categoryName.length > 80) {
+            setSaveStatus("Category names must be 80 characters or fewer.", "error");
+            categoryCustom?.focus();
+            return;
+          }
+          if (!isValidFirebaseKey(categoryName)) {
+            setSaveStatus('Category names cannot contain . # $ [ ] or / characters.', "error");
+            categoryCustom?.focus();
+            return;
+          }
+
+          const categoryIcon = form.querySelector("#marker-category-icon")?.value.trim() || null;
+          const categoryWasNew = !categories[categoryName];
+          const previousCategoryIcon = categories[categoryName]?.icon || null;
 
           if (!categories[categoryName]) {
             categories[categoryName] = {
@@ -889,33 +1110,41 @@ function createMarkerWithPopup(latlng) {
           }
 
           const relatedItems = [];
-          document.querySelectorAll(".related-item-input").forEach((itemDiv) => {
+          form.querySelectorAll(".related-item-input").forEach((itemDiv) => {
             const itemName = itemDiv.querySelector(".related-item-name")?.value.trim();
             if (itemName) {
               relatedItems.push(itemName);
             }
           });
 
-          const guideSteps = document.getElementById("marker-guide-steps")?.value
+          const guideSteps = form.querySelector("#marker-guide-steps")?.value
             .split(/\n+/)
             .map((step) => step.trim())
             .filter(Boolean) || [];
-          const guideTitle = document.getElementById("marker-guide-title")?.value.trim() || "Quick Guide";
+          const guideTitle = form.querySelector("#marker-guide-title")?.value.trim() || "Quick Guide";
           const images = [];
-          document.querySelectorAll(".image-url-input").forEach((imageInput) => {
+          form.querySelectorAll(".image-url-input").forEach((imageInput) => {
             const imageUrl = imageInput.value.trim();
             if (imageUrl) images.push(imageUrl);
           });
 
+          const finalPosition = marker.getLatLng();
+          if (!Number.isFinite(finalPosition.lat) || !Number.isFinite(finalPosition.lng)) {
+            setSaveStatus("This marker does not have valid map coordinates.", "error");
+            return;
+          }
+
+          const locationId = `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
+
           const locationData = normalizeLocation(
             {
-              id: Date.now(),
-              lat: latlng.lat.toFixed(6),
-              lng: latlng.lng.toFixed(6),
+              id: locationId,
+              lat: finalPosition.lat.toFixed(6),
+              lng: finalPosition.lng.toFixed(6),
               name,
               img: images[0] || "",
               images,
-              info: document.getElementById("marker-info")?.value.trim() || "",
+              info: form.querySelector("#marker-info")?.value.trim() || "",
               relatedItems,
               guide: guideSteps.length
                 ? { title: guideTitle, steps: guideSteps }
@@ -926,11 +1155,36 @@ function createMarkerWithPopup(latlng) {
           );
 
           categories[categoryName].locations.push(locationData);
-          persistCategories();
+
+          saveButton.disabled = true;
+          saveButton.textContent = "Saving...";
+          setSaveStatus("Saving this location...", "pending");
+          const saveResult = await persistCategories();
+          const saveSucceeded = saveResult.localSaved || saveResult.remoteSaved;
+
+          if (!saveSucceeded) {
+            categories[categoryName].locations = categories[categoryName].locations.filter(
+              (location) => location.id !== locationId
+            );
+            if (categoryWasNew && categories[categoryName].locations.length === 0) {
+              delete categories[categoryName];
+            } else if (!categoryWasNew) {
+              categories[categoryName].icon = previousCategoryIcon;
+            }
+            saveButton.disabled = false;
+            saveButton.textContent = "Save Location";
+            setSaveStatus("The location could not be saved. Check your connection and try again.", "error");
+            return;
+          }
+
           marker._saved = true;
           marker._pendingSave = false;
           rebuildMap();
           focusLocation(locationData, { zoom: 2.7 });
+
+          if (isFirebaseConfigured() && !saveResult.remoteSaved) {
+            alert("The location was saved on this device, but Firebase sync failed. It will be merged on a later successful sync.");
+          }
         });
       }
     }, 10);
@@ -988,14 +1242,16 @@ window.addEventListener("DOMContentLoaded", () => {
 
   if (exportButton) {
     exportButton.addEventListener("click", () => {
-      const blob = new Blob([JSON.stringify(categories, null, 2)], { type: "application/json" });
+      const exportData = createPersistableCategories(categories);
+      const exportJson = JSON.stringify(exportData, null, 2);
+      const blob = new Blob([exportJson], { type: "application/json" });
       const url = URL.createObjectURL(blob);
       const anchor = document.createElement("a");
       anchor.href = url;
       anchor.download = "map-data.json";
       anchor.click();
       URL.revokeObjectURL(url);
-      navigator.clipboard?.writeText(JSON.stringify(categories, null, 2)).catch(() => {});
+      navigator.clipboard?.writeText(exportJson).catch(() => {});
     });
   }
 
@@ -1009,13 +1265,28 @@ window.addEventListener("DOMContentLoaded", () => {
       if (!file) return;
 
       const reader = new FileReader();
-      reader.onload = () => {
+      reader.onload = async () => {
         try {
           const parsed = JSON.parse(reader.result);
-          categories = normalizeCategories(parsed);
-          persistCategories();
+          if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+            throw new Error("Map data must be an object keyed by category name.");
+          }
+          const importedCategories = normalizeCategories(parsed);
+          if (!Object.keys(importedCategories).length) {
+            throw new Error("The imported file does not contain any categories.");
+          }
+          const previousCategories = categories;
+          categories = importedCategories;
+          const saveResult = await persistCategories();
+          if (!saveResult.localSaved && !saveResult.remoteSaved) {
+            categories = previousCategories;
+            throw saveResult.error || new Error("Imported data could not be saved.");
+          }
           rebuildMap();
           optionsContainer?.classList.add("hidden");
+          if (isFirebaseConfigured() && !saveResult.remoteSaved) {
+            alert("The import was saved locally, but Firebase sync failed.");
+          }
         } catch (error) {
           console.error("Failed to import data:", error);
           alert("Import failed. Please choose a valid map JSON file.");

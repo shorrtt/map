@@ -648,6 +648,35 @@ textarea.popup-input {
   color: #fff;
 }
 
+.guide-card {
+  margin: 12px 0 14px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: rgba(107, 114, 128, 0.12);
+  border: 1px solid rgba(107, 114, 128, 0.28);
+}
+
+.guide-title {
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  margin-bottom: 8px;
+  color: #e5e7eb;
+}
+
+.quick-guide-list {
+  margin: 0;
+  padding-left: 16px;
+  color: var(--text-muted);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.quick-guide-list li + li {
+  margin-top: 4px;
+}
+
 /* Highlighted marker styling (no animation) */
 .leaflet-marker-icon.highlighted {
   z-index: 999999;

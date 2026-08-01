@@ -24,9 +24,121 @@ let categories = {};
 let dataSource = "categories.json"; // default (set on DOMContentLoaded)
 const markersGroup = L.layerGroup().addTo(map);
 let currentHighlightedMarker = null; // used for marker highlighting
+let createMarkerMode = false;
 
 // Simple in-memory image memo cache (Promise-based)
 const imageLoadCache = new Map();
+const localStorageKey = "echo-map-data-v1";
+
+function escapeHtml(value) {
+  return String(value ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/\"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+function normalizeGuide(guide) {
+  if (!guide) return null;
+
+  if (typeof guide === "string") {
+    const steps = guide
+      .split(/\n+/)
+      .map((step) => step.trim())
+      .filter(Boolean);
+    return { title: "Quick Guide", steps };
+  }
+
+  const stepList = Array.isArray(guide.steps)
+    ? guide.steps.map((step) => String(step).trim()).filter(Boolean)
+    : [];
+  const bodyLines = typeof guide.body === "string"
+    ? guide.body
+        .split(/\n+/)
+        .map((step) => step.trim())
+        .filter(Boolean)
+    : [];
+
+  return {
+    title: guide.title || "Quick Guide",
+    steps: stepList.length ? stepList : bodyLines,
+  };
+}
+
+function normalizeLocation(rawLocation, categoryName, index) {
+  const relatedItems = Array.isArray(rawLocation?.relatedItems)
+    ? rawLocation.relatedItems.filter(Boolean).map((item) => String(item))
+    : [];
+
+  return {
+    id: rawLocation?.id ?? Date.now() + index,
+    lat: rawLocation?.lat != null ? String(rawLocation.lat) : "",
+    lng: rawLocation?.lng != null ? String(rawLocation.lng) : "",
+    name: rawLocation?.name || `${categoryName} ${index + 1}`,
+    img: rawLocation?.img || "",
+    info: rawLocation?.info || "",
+    relatedItems,
+    guide: normalizeGuide(rawLocation?.guide),
+  };
+}
+
+function normalizeCategories(rawCategories) {
+  const normalized = {};
+  for (const [categoryName, categoryData] of Object.entries(rawCategories || {})) {
+    const locations = Array.isArray(categoryData?.locations)
+      ? categoryData.locations.map((location, index) =>
+          normalizeLocation(location, categoryName, index)
+        )
+      : [];
+
+    normalized[categoryName] = {
+      color: categoryData?.color || getCategoryColor(categoryName),
+      locations,
+    };
+  }
+  return normalized;
+}
+
+function getCategoryColor(categoryName) {
+  const palette = ["#60a5fa", "#34d399", "#f59e0b", "#a78bfa", "#f472b6", "#fb923c"];
+  const index = Math.abs(categoryName.split("").reduce((sum, char) => sum + char.charCodeAt(0), 0)) % palette.length;
+  return palette[index];
+}
+
+function persistCategories() {
+  try {
+    localStorage.setItem(localStorageKey, JSON.stringify(categories));
+  } catch (error) {
+    console.warn("Could not persist map data:", error);
+  }
+}
+
+function loadPersistedCategories() {
+  try {
+    const storedValue = localStorage.getItem(localStorageKey);
+    if (!storedValue) return null;
+    const parsed = JSON.parse(storedValue);
+    return normalizeCategories(parsed);
+  } catch (error) {
+    console.warn("Could not load persisted map data:", error);
+    return null;
+  }
+}
+
+function buildCategoryIcons(categoriesByName) {
+  const categoryIcons = {};
+  for (const category in categoriesByName) {
+    const color = categoriesByName[category].color;
+    categoryIcons[category] = L.divIcon({
+      className: "custom-div-icon",
+      html: getPinSVG(color),
+      iconSize: [32, 32],
+      popupAnchor: [0, -10],
+    });
+  }
+  return categoryIcons;
+}
 
 /**
  * Load an image once and memoize the Promise so reuses are instant.
@@ -87,15 +199,27 @@ function highlightMarker(marker) {
   }
 }
 
+function rebuildMap() {
+  markersGroup.clearLayers();
+  const locationsListContainer = document.getElementById("locations-list-inner");
+  if (locationsListContainer) {
+    locationsListContainer.innerHTML = "";
+  }
+
+  const categoryIcons = buildCategoryIcons(categories);
+  renderCategoriesAndMarkers(categoryIcons);
+}
+
 /**
  * Loads data from the given JSON file and builds the sidebar and markers.
  * No global image prefetching.
  */
 function loadData(fileName) {
-  markersGroup.clearLayers();
-  const locationsListContainer = document.getElementById("locations-list-inner");
-  if (locationsListContainer) {
-    locationsListContainer.innerHTML = "";
+  const persistedCategories = loadPersistedCategories();
+  if (persistedCategories) {
+    categories = persistedCategories;
+    rebuildMap();
+    return;
   }
 
   fetch(fileName)
@@ -104,21 +228,9 @@ function loadData(fileName) {
       return response.json();
     })
     .then((data) => {
-      categories = data;
-
-      // Build a simple colored pin icon per category
-      const categoryIcons = {};
-      for (const category in categories) {
-        const color = categories[category].color;
-        categoryIcons[category] = L.divIcon({
-          className: "custom-div-icon",
-          html: getPinSVG(color),
-          iconSize: [32, 32],
-          popupAnchor: [0, -10],
-        });
-      }
-
-      loadCategories(categoryIcons);
+      categories = normalizeCategories(data);
+      persistCategories();
+      rebuildMap();
     })
     .catch((error) => {
       console.error("Error loading JSON file:", error);
@@ -128,7 +240,7 @@ function loadData(fileName) {
 /**
  * Builds the sidebar and adds markers for each category.
  */
-function loadCategories(categoryIcons) {
+function renderCategoriesAndMarkers(categoryIcons) {
   const locationsListContainer = document.getElementById("locations-list-inner");
   const fragment = document.createDocumentFragment();
 
@@ -237,34 +349,48 @@ function focusLocation(location, options = {}) {
  * Displays a side popup with location details.
  * Image is lazy-loaded on demand and cached.
  */
-function showSidePopup(location) {
-  // Use either Info or info field
-  const infoText =
-    location.Info || location.info
-      ? `<p style="margin-top: 5px; font-style: italic;">${
-          location.Info || location.info
-        }</p>`
-      : "";
+function renderQuickGuide(location) {
+  if (!location?.guide || !Array.isArray(location.guide.steps) || !location.guide.steps.length) {
+    return "";
+  }
 
-  // Build related items section
-  const relatedItemsText = 
+  const steps = location.guide.steps
+    .map((step) => `<li>${escapeHtml(step)}</li>`)
+    .join("");
+
+  return `
+    <div class="guide-card">
+      <div class="guide-title">${escapeHtml(location.guide.title || "Quick Guide")}</div>
+      <ul class="quick-guide-list">${steps}</ul>
+    </div>
+  `;
+}
+
+function showSidePopup(location) {
+  const infoText = location.info
+    ? `<p style="margin-top: 5px; font-style: italic;">${escapeHtml(location.info)}</p>`
+    : "";
+
+  const relatedItemsText =
     location.relatedItems && Array.isArray(location.relatedItems) && location.relatedItems.length > 0
       ? `<div style="margin-top: 15px; padding-top: 10px; border-top: 1px solid rgba(255,255,255,0.2);">
           <h3 style="margin: 0 0 8px 0; font-size: 14px;">Related Items</h3>
           <div style="display: flex; flex-wrap: wrap; gap: 6px;">
-            ${location.relatedItems.map(item => `<span style="background: rgba(255,255,255,0.15); padding: 4px 8px; border-radius: 4px; font-size: 12px;">${item}</span>`).join('')}
+            ${location.relatedItems.map((item) => `<span style="background: rgba(255,255,255,0.15); padding: 4px 8px; border-radius: 4px; font-size: 12px;">${escapeHtml(item)}</span>`).join("")}
           </div>
         </div>`
       : "";
 
-  // Skeleton placeholder for image while loading
+  const quickGuideText = renderQuickGuide(location);
+
   const content = `
-    <h1>${location.name}</h1>
+    <h1>${escapeHtml(location.name)}</h1>
     ${infoText}
     <div id="side-img-wrap" style="width:100%; aspect-ratio: 16 / 9; background: rgba(255,255,255,0.06); display:flex; align-items:center; justify-content:center; border-radius:6px; overflow:hidden; margin-bottom:10px;">
       <span id="side-img-loading" style="font-size:14px; opacity:0.8;">Loading image…</span>
-      <img id="side-img" alt="${location.name}" title="${location.name}" style="display:none; width:100%; height:100%; object-fit:contain; cursor:pointer;" loading="lazy" />
+      <img id="side-img" alt="${escapeHtml(location.name)}" title="${escapeHtml(location.name)}" style="display:none; width:100%; height:100%; object-fit:contain; cursor:pointer;" loading="lazy" />
     </div>
+    ${quickGuideText}
     ${relatedItemsText}
   `;
 
@@ -348,9 +474,6 @@ map.on("dblclick", (e) => {
   createMarkerWithPopup(e.latlng);
 });
 
-// Simple "create marker" mode toggled from the options dialog.
-let createMarkerMode = false;
-
 // If create-marker mode is enabled, the very next single-click on the map
 // will drop a marker at that location and open the editing popup.
 map.on("click", (e) => {
@@ -360,35 +483,58 @@ map.on("click", (e) => {
 });
 
 function createMarkerWithPopup(latlng) {
-  console.log("Creating marker at latlng:", latlng);
   const marker = L.marker(latlng, { draggable: true }).addTo(map);
+  marker._pendingSave = true;
+  marker._saved = false;
+
+  const categoryNames = Object.keys(categories).sort();
+  const categoryOptions = categoryNames.length
+    ? categoryNames
+        .map(
+          (categoryName) =>
+            `<option value="${escapeHtml(categoryName)}">${escapeHtml(categoryName)}</option>`
+        )
+        .join("")
+    : "<option value=\"\">Create new category</option>";
+
   const popupContent = `
-    <div style="min-width: 300px; max-width: 400px;">
-      <h3 style="margin-top: 0; color: var(--text-primary);">Create Marker</h3>
-      
-      <label for="marker-name" style="display: block; margin-top: 12px; font-weight: 600; font-size: 13px; color: var(--text-muted);">Location Name *</label>
-      <input id="marker-name" type="text" class="popup-input" placeholder="e.g. Meth Lab 1"/><br>
-      
-      <label for="marker-img" style="display: block; margin-top: 12px; font-weight: 600; font-size: 13px; color: var(--text-muted);">Image URL</label>
-      <input id="marker-img" type="text" class="popup-input" placeholder="https://..."/><br>
-      
-      <label for="marker-info" style="display: block; margin-top: 12px; font-weight: 600; font-size: 13px; color: var(--text-muted);">Info</label>
-      <input id="marker-info" type="text" class="popup-input" placeholder="e.g. Requires 5 thermite"/><br>
-      
-      <label style="display: block; margin-top: 12px; font-weight: 600; font-size: 13px; color: var(--text-muted);">Related Items (optional)</label>
-      <small style="color: var(--text-muted); display: block; margin-bottom: 8px;">Add items this location provides/uses</small>
-      
+    <div style="min-width: 320px; max-width: 420px;">
+      <h3 style="margin-top: 0; color: var(--text-primary);">Add Location</h3>
+
+      <label for="marker-category-select" style="display: block; margin-top: 10px; font-weight: 600; font-size: 13px; color: var(--text-muted);">Category</label>
+      <select id="marker-category-select" class="popup-input">
+        ${categoryOptions}
+        <option value="__new__">+ New category</option>
+      </select>
+      <input id="marker-category-custom" type="text" class="popup-input" placeholder="New category name" style="display: none;" />
+
+      <label for="marker-name" style="display: block; margin-top: 10px; font-weight: 600; font-size: 13px; color: var(--text-muted);">Location Name *</label>
+      <input id="marker-name" type="text" class="popup-input" placeholder="e.g. Meth Lab 1" />
+
+      <label for="marker-img" style="display: block; margin-top: 10px; font-weight: 600; font-size: 13px; color: var(--text-muted);">Image URL</label>
+      <input id="marker-img" type="text" class="popup-input" placeholder="https://..." />
+
+      <label for="marker-info" style="display: block; margin-top: 10px; font-weight: 600; font-size: 13px; color: var(--text-muted);">Info</label>
+      <input id="marker-info" type="text" class="popup-input" placeholder="e.g. Requires 5 thermite" />
+
+      <label for="marker-guide-title" style="display: block; margin-top: 10px; font-weight: 600; font-size: 13px; color: var(--text-muted);">Quick Guide Title</label>
+      <input id="marker-guide-title" type="text" class="popup-input" placeholder="Quick Guide" />
+
+      <label for="marker-guide-steps" style="display: block; margin-top: 10px; font-weight: 600; font-size: 13px; color: var(--text-muted);">Quick Guide Steps</label>
+      <textarea id="marker-guide-steps" class="popup-input" rows="4" placeholder="One step per line"></textarea>
+
+      <label style="display: block; margin-top: 10px; font-weight: 600; font-size: 13px; color: var(--text-muted);">Related Items (optional)</label>
+      <small style="color: var(--text-muted); display: block; margin-bottom: 8px;">Add items this location provides or uses</small>
+
       <div id="related-items-container" style="margin-bottom: 12px;">
         <div class="related-item-input" style="display: flex; gap: 8px; margin-bottom: 8px;">
-          <input type="text" class="popup-input related-item-name" placeholder="Item name" style="flex: 1; margin: 0;"/>
-          <input type="text" class="popup-input related-item-desc" placeholder="Description (optional)" style="flex: 1; margin: 0;"/>
+          <input type="text" class="popup-input related-item-name" placeholder="Item name" style="flex: 1; margin: 0;" />
           <button class="remove-related-item" style="padding: 8px 12px; background: #ef4444; color: white; border: none; border-radius: 4px; cursor: pointer; min-width: 40px;">×</button>
         </div>
       </div>
-      
+
       <button id="add-related-item" style="width: 100%; padding: 8px; margin-bottom: 12px; background: rgba(59, 130, 246, 0.2); color: #3b82f6; border: 1px solid #3b82f6; border-radius: 4px; cursor: pointer; font-size: 12px;">+ Add Item</button>
-      
-      <button id="copy-marker" class="popup-button">Copy to Clipboard</button>
+      <button id="save-marker" class="popup-button">Save Location</button>
     </div>
   `;
   marker.bindPopup(popupContent);
@@ -396,79 +542,109 @@ function createMarkerWithPopup(latlng) {
 
   marker.on("popupopen", () => {
     setTimeout(() => {
-      // Add related item button
       const addItemBtn = document.getElementById("add-related-item");
       const relatedItemsContainer = document.getElementById("related-items-container");
-      
-      if (addItemBtn) {
+      const categorySelect = document.getElementById("marker-category-select");
+      const categoryCustom = document.getElementById("marker-category-custom");
+      const saveButton = document.getElementById("save-marker");
+
+      const setupRemoveButtons = () => {
+        const removeButtons = document.querySelectorAll(".remove-related-item");
+        removeButtons.forEach((btn) => {
+          btn.onclick = (event) => {
+            event.target.closest(".related-item-input").remove();
+          };
+        });
+      };
+
+      if (addItemBtn && relatedItemsContainer) {
         addItemBtn.addEventListener("click", () => {
           const newItemDiv = document.createElement("div");
           newItemDiv.className = "related-item-input";
           newItemDiv.style.cssText = "display: flex; gap: 8px; margin-bottom: 8px;";
           newItemDiv.innerHTML = `
-            <input type="text" class="popup-input related-item-name" placeholder="Item name" style="flex: 1; margin: 0;"/>
-            <input type="text" class="popup-input related-item-desc" placeholder="Description (optional)" style="flex: 1; margin: 0;"/>
+            <input type="text" class="popup-input related-item-name" placeholder="Item name" style="flex: 1; margin: 0;" />
             <button class="remove-related-item" style="padding: 8px 12px; background: #ef4444; color: white; border: none; border-radius: 4px; cursor: pointer; min-width: 40px;">×</button>
           `;
           relatedItemsContainer.appendChild(newItemDiv);
-          
-          // Add remove listener to new item
           setupRemoveButtons();
         });
       }
-      
-      // Setup remove buttons
-      const setupRemoveButtons = () => {
-        const removeButtons = document.querySelectorAll(".remove-related-item");
-        removeButtons.forEach(btn => {
-          btn.onclick = (e) => {
-            e.target.closest(".related-item-input").remove();
-          };
+
+      if (categorySelect && categoryCustom) {
+        categorySelect.addEventListener("change", () => {
+          categoryCustom.style.display = categorySelect.value === "__new__" ? "block" : "none";
         });
-      };
-      
+      }
+
       setupRemoveButtons();
-      
-      const copyButton = document.getElementById("copy-marker");
-      if (copyButton) {
-        copyButton.addEventListener("click", () => {
-          const name = document.getElementById("marker-name").value;
-          const imgUrl = document.getElementById("marker-img").value;
-          const info = document.getElementById("marker-info").value;
-          
-          // Collect related items
+
+      if (saveButton) {
+        saveButton.addEventListener("click", () => {
+          const name = document.getElementById("marker-name")?.value.trim();
+          if (!name) {
+            alert("Please enter a location name.");
+            return;
+          }
+
+          const categoryValue = categorySelect?.value === "__new__"
+            ? categoryCustom?.value.trim()
+            : categorySelect?.value.trim();
+          const categoryName = categoryValue || "New Category";
+
+          if (!categories[categoryName]) {
+            categories[categoryName] = {
+              color: getCategoryColor(categoryName),
+              locations: [],
+            };
+          }
+
           const relatedItems = [];
-          document.querySelectorAll(".related-item-input").forEach(itemDiv => {
-            const itemName = itemDiv.querySelector(".related-item-name").value.trim();
+          document.querySelectorAll(".related-item-input").forEach((itemDiv) => {
+            const itemName = itemDiv.querySelector(".related-item-name")?.value.trim();
             if (itemName) {
               relatedItems.push(itemName);
             }
           });
-          
-          const markerData = {
-            id: Date.now(),
-            lat: latlng.lat.toFixed(6),
-            lng: latlng.lng.toFixed(6),
-            name: name || "New Location",
-            img: imgUrl || "",
-            info: info || "",
-            relatedItems: relatedItems,
-          };
-          const formattedData = JSON.stringify(markerData);
-          copyToClipboard(formattedData);
-          marker.bindPopup(`<p>Marker copied to clipboard!</p>`).openPopup();
-          setTimeout(() => {
-            map.removeLayer(marker);
-          }, 1500);
+
+          const guideSteps = document.getElementById("marker-guide-steps")?.value
+            .split(/\n+/)
+            .map((step) => step.trim())
+            .filter(Boolean) || [];
+          const guideTitle = document.getElementById("marker-guide-title")?.value.trim() || "Quick Guide";
+
+          const locationData = normalizeLocation(
+            {
+              id: Date.now(),
+              lat: latlng.lat.toFixed(6),
+              lng: latlng.lng.toFixed(6),
+              name,
+              img: document.getElementById("marker-img")?.value.trim() || "",
+              info: document.getElementById("marker-info")?.value.trim() || "",
+              relatedItems,
+              guide: guideSteps.length
+                ? { title: guideTitle, steps: guideSteps }
+                : null,
+            },
+            categoryName,
+            categories[categoryName].locations.length
+          );
+
+          categories[categoryName].locations.push(locationData);
+          persistCategories();
+          marker._saved = true;
+          marker._pendingSave = false;
+          rebuildMap();
+          focusLocation(locationData, { zoom: 2.7 });
         });
-      } else {
-        console.error("Copy button not found.");
       }
     }, 10);
   });
 
   marker.on("popupclose", () => {
-    map.removeLayer(marker);
+    if (marker._pendingSave && !marker._saved) {
+      map.removeLayer(marker);
+    }
   });
 }
 

@@ -214,6 +214,61 @@ function getLocationIdentity(location) {
   return `location:${location?.lat}|${location?.lng}|${location?.name}`;
 }
 
+function findCategoryForLocation(location) {
+  if (!location) return null;
+  const targetIdentity = getLocationIdentity(location);
+  for (const [categoryName, categoryData] of Object.entries(categories || {})) {
+    if (!categoryData || !Array.isArray(categoryData.locations)) continue;
+    const match = categoryData.locations.find(
+      (candidate) => getLocationIdentity(candidate) === targetIdentity
+    );
+    if (match) return categoryName;
+  }
+  return null;
+}
+
+function deleteLocation(location) {
+  if (!location) return;
+  const categoryName = findCategoryForLocation(location);
+  if (!categoryName) return;
+
+  const categoryData = categories[categoryName];
+  if (!categoryData) return;
+
+  const targetIdentity = getLocationIdentity(location);
+  const wasDeleted = categoryData.locations.some(
+    (candidate) => getLocationIdentity(candidate) === targetIdentity
+  );
+  if (!wasDeleted) return;
+
+  if (!window.confirm(`Delete "${location.name || "this location"}"?`)) return;
+
+  categoryData.locations = categoryData.locations.filter(
+    (candidate) => getLocationIdentity(candidate) !== targetIdentity
+  );
+
+  if (categoryData.locations.length === 0) {
+    delete categories[categoryName];
+  }
+
+  if (location.marker) {
+    markersGroup.removeLayer(location.marker);
+    location.marker = null;
+  }
+
+  if (currentHighlightedMarker && currentHighlightedMarker.getLatLng) {
+    const activeLatLng = currentHighlightedMarker.getLatLng();
+    if (!activeLatLng || (activeLatLng.lat === location.lat && activeLatLng.lng === location.lng)) {
+      currentHighlightedMarker = null;
+    }
+  }
+
+  document.getElementById("side-popup").style.display = "none";
+  void persistCategories().finally(() => {
+    rebuildMap();
+  });
+}
+
 /**
  * Merge incoming locations into the current database value without deleting
  * locations saved by another client. Existing records win on ID collisions.
@@ -817,6 +872,9 @@ function showSidePopup(location) {
     ${renderLocationGallery(location)}
     ${quickGuideText}
     ${relatedItemsText}
+    <div style="margin-top: 16px; display: flex; gap: 8px;">
+      <button type="button" id="delete-location-button" class="popup-button delete-location-button">Delete Location</button>
+    </div>
   `;
 
   const popupContentEl = document.getElementById("side-popup-content");
@@ -852,6 +910,10 @@ function showSidePopup(location) {
       const imageUrl = thumbButton.dataset.imageUrl;
       if (imageUrl) showImage(imageUrl);
     });
+  });
+
+  popupContentEl.querySelector("#delete-location-button")?.addEventListener("click", () => {
+    deleteLocation(location);
   });
 
   imgEl?.addEventListener("click", function () {

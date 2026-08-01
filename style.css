@@ -1274,6 +1274,7 @@ textarea:focus-visible,
   min-height: 38px;
   padding-right: 32px;
   padding-left: 27px;
+  color-scheme: dark;
   border-color: rgba(147, 197, 253, 0.34);
   background: linear-gradient(135deg, rgba(36, 50, 71, 0.95), rgba(24, 33, 48, 0.96));
   color: #e0edff;
@@ -1289,6 +1290,7 @@ textarea:focus-visible,
 #options-container select option {
   background: #111823;
   color: #e5edf8;
+  color-scheme: dark;
 }
 
 .create-location-form #marker-category-custom {

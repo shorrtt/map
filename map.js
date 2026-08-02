@@ -622,9 +622,50 @@ function loadData(fileName) {
       const remoteData = snapshot.val();
 
       if (remoteData && typeof remoteData === "object" && Object.keys(remoteData).length > 0) {
-        // If Firebase has data, it is the source of truth.
-        categories = normalizeCategories(remoteData);
-        saveCategoriesLocally(createPersistableCategories(categories));
+        // If Firebase has data, it is the source of truth, but we need to merge
+        // any unsynced local changes to prevent data loss.
+        const remoteCategories = normalizeCategories(remoteData);
+        let wasMerged = false;
+
+        // Merge check is only necessary if there are local categories to check against.
+        if (persistedCategories) {
+          const remoteLocationIds = new Set();
+          Object.values(remoteCategories).forEach(cat => 
+            cat.locations.forEach(loc => loc.id && remoteLocationIds.add(String(loc.id)))
+          );
+
+          Object.entries(persistedCategories).forEach(([categoryName, categoryData]) => {
+            if (!categoryData.locations) return;
+            categoryData.locations.forEach(location => {
+              if (location.id && !remoteLocationIds.has(String(location.id))) {
+                if (!remoteCategories[categoryName]) {
+                  // Create category if it doesn't exist in remote data
+                  remoteCategories[categoryName] = {
+                    color: categoryData.color,
+                    icon: categoryData.icon,
+                    locations: [],
+                  };
+                }
+                remoteCategories[categoryName].locations.push(location);
+                wasMerged = true;
+                console.log(`Merging unsynced local location: "${location.name}"`);
+              }
+            });
+          });
+        }
+
+        categories = remoteCategories;
+
+        // Persist the merged data back to Firebase. This makes the "merge" promise true.
+        // The 'on' listener will fire again, but 'wasMerged' will be false then, preventing a loop.
+        if (wasMerged) {
+          void persistCategories({ syncRemote: true });
+        } else {
+          // If no merge occurred, just save the authoritative remote state locally.
+          saveCategoriesLocally(createPersistableCategories(categories));
+        }
+
+        // Set the sync flag and rebuild the map. This happens regardless of merge status.
         if (!hasSyncedOnce) {
           try {
             localStorage.setItem(firebaseSyncedOnceKey, "true");

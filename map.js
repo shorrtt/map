@@ -36,6 +36,7 @@ let firebaseSyncReady = false;
 let firebaseSyncEnabled = false;
 let firebaseSyncPromise = null;
 const firebaseSyncedOnceKey = "echo-map-has-synced-v1";
+const lastSyncTimestampKey = "echo-map-last-sync-ts-v1";
 const firebaseInvalidKeyPattern = /[.#$[\]/\u0000-\u001F\u007F]/;
 
 function escapeHtml(value) {
@@ -619,9 +620,11 @@ function loadData(fileName) {
     const dbRef = firebaseDb.ref(firebaseDataPath);
     dbRef.on("value", (snapshot) => {
       const hasSyncedOnce = !!localStorage.getItem(firebaseSyncedOnceKey);
+      const lastSyncTimestamp = parseInt(localStorage.getItem(lastSyncTimestampKey) || "0", 10);
       const remoteData = snapshot.val();
 
       if (remoteData && typeof remoteData === "object" && Object.keys(remoteData).length > 0) {
+        const syncTime = Date.now();
         // If Firebase has data, it is the source of truth, but we need to merge
         // any unsynced local changes to prevent data loss.
         const remoteCategories = normalizeCategories(remoteData);
@@ -637,18 +640,26 @@ function loadData(fileName) {
           Object.entries(persistedCategories).forEach(([categoryName, categoryData]) => {
             if (!categoryData.locations) return;
             categoryData.locations.forEach(location => {
-              if (location.id && !remoteLocationIds.has(String(location.id))) {
-                if (!remoteCategories[categoryName]) {
-                  // Create category if it doesn't exist in remote data
-                  remoteCategories[categoryName] = {
-                    color: categoryData.color,
-                    icon: categoryData.icon,
-                    locations: [],
-                  };
+              if (location.id && !remoteLocationIds.has(String(location.id))) { // It's in local but not remote
+                const locationTimestamp = parseInt(String(location.id).split('-')[0], 10);
+                if (Number.isFinite(locationTimestamp) && locationTimestamp > lastSyncTimestamp) {
+                  // This location was created locally *after* our last successful sync.
+                  // It's a genuine unsynced addition. Merge it.
+                  if (!remoteCategories[categoryName]) {
+                    remoteCategories[categoryName] = {
+                      color: categoryData.color,
+                      icon: categoryData.icon,
+                      locations: [],
+                    };
+                  }
+                  remoteCategories[categoryName].locations.push(location);
+                  wasMerged = true;
+                  console.log(`Merging unsynced new location: "${location.name}"`);
+                } else {
+                  // This location is old and not in remote. It was likely deleted by another user.
+                  // We will let it be removed when we adopt the remoteCategories as the source of truth.
+                  console.log(`Dropping stale local location: "${location.name}"`);
                 }
-                remoteCategories[categoryName].locations.push(location);
-                wasMerged = true;
-                console.log(`Merging unsynced local location: "${location.name}"`);
               }
             });
           });
@@ -663,6 +674,12 @@ function loadData(fileName) {
         } else {
           // If no merge occurred, just save the authoritative remote state locally.
           saveCategoriesLocally(createPersistableCategories(categories));
+          // And update the sync timestamp since we are now aligned with remote.
+          try {
+            localStorage.setItem(lastSyncTimestampKey, String(syncTime));
+          } catch (e) {
+            console.warn("Could not set sync timestamp in localStorage", e);
+          }
         }
 
         // Set the sync flag and rebuild the map. This happens regardless of merge status.
